@@ -29,7 +29,7 @@
         let ws;
         function connect() {
             // Подключаемся к WebSocket-серверу на Render
-            const wsUrl = `wss://your-render-app.onrender.com/ws?room=${roomId}`;
+            const wsUrl = `wss://codenames-u88n.onrender.com/ws?room=${roomId}`;
             ws = new WebSocket(wsUrl);
             ws.onopen = () => document.getElementById('status').textContent = '✅ Игра подключена!';
             ws.onmessage = (event) => {
