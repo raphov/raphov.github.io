@@ -1,134 +1,188 @@
-import os, json, uuid, random
+import os, json, uuid, random, asyncio, logging
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext
-from aiohttp.web_runner import TCPSite
+from telegram.ext import Application, CommandHandler, ContextTypes, TypeHandler
 
-# --- Конфигурация ---
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://your-username.github.io')  # Ваш GitHub Pages
-PORT = int(os.getenv('PORT', 8080))
+# --- Настройка логирования ---
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- Конфигурация (Заполнить в Render!) ---
+BOT_TOKEN = os.environ.get('BOT_TOKEN')           # Токен из @BotFather
+RENDER_URL = os.environ.get('RENDER_URL')         # https://ваш-проект.onrender.com
+FRONTEND_URL = os.environ.get('FRONTEND_URL')     # https://username.github.io
 
 # --- Хранилище данных игры ---
-active_games = {}  # room_id -> game_state
-ws_connections = {}  # room_id -> [WebSocketResponse, ]
+active_games = {}
+ws_connections = {}
 
-# --- Логика игры ---
 WORD_LIST = [
     "яблоко", "гора", "мост", "врач", "луна", "книга", "огонь", "река", "часы", "снег",
     "глаз", "дом", "змея", "кольцо", "корабль", "лев", "лес", "машина", "медведь", "нос",
     "океан", "перо", "пила", "поле", "пуля", "работа", "роза", "рука", "сапог", "сок",
-    "стол", "театр", "тень", "фонтан", "хлеб", "школа", "шляпа", "ящик"
+    "стол", "театр", "тень", "фонтан", "хлеб", "школа", "шляпа", "ящик", "игла", "йогурт",
+    "зонт", "ксерокс", "эхо", "юла", "якорь"
 ]
 
 def generate_game_state():
+    """Создаёт новое состояние игры"""
     words = random.sample(WORD_LIST, 25)
-    # Ключевая карта: 9 красных, 8 синих, 1 чёрный (убийца), 7 нейтральных
+    # Распределение: 9 красных, 8 синих, 1 чёрный, 7 нейтральных
     key = (['red'] * 9) + (['blue'] * 8) + ['black'] + (['neutral'] * 7)
     random.shuffle(key)
+    
     return {
         'words': words,
         'key': key,
         'revealed': [False] * 25,
-        'current_team': 'red',  # Красные начинают
+        'current_team': 'red',
         'hint': None,
         'hint_number': None,
         'guesses_left': 0,
-        'status': 'waiting'  # waiting -> hint -> guessing -> finished
+        'status': 'waiting',
+        'players': []
     }
 
-# --- Обработчики команд Telegram ---
-async def start(update: Update, context: CallbackContext):
+# --- Команды Telegram ---
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик /start"""
     await update.message.reply_text(
         "🎮 Добро пожаловать в Codenames!\n"
-        "Создайте новую игру: /newgame\n"
-        "Присоединиться к комнате: /join [room_id]"
+        "Создать игру: /newgame\n"
+        "Присоединиться: /join [ID комнаты]"
     )
 
-async def newgame(update: Update, context: CallbackContext):
-    room_id = str(uuid.uuid4())[:8]
+async def newgame_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик /newgame"""
+    room_id = str(uuid.uuid4())[:8].upper()
     active_games[room_id] = generate_game_state()
-    game_url = f"{FRONTEND_URL}/?room={room_id}"
+    
+    # Ссылка на фронтенд с параметром комнаты
+    game_url = f"{FRONTEND_URL}?room={room_id}"
+    
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🎮 Открыть игровое поле", url=game_url)
     ]])
+    
     await update.message.reply_text(
-        f"✅ Игра создана! Комната: `{room_id}`\n"
-        "Отправьте этот ID друзьям для присоединения.\n"
-        "Нажмите кнопку ниже, чтобы открыть игровое поле:",
+        f"✅ Комната создана!\n"
+        f"ID: `{room_id}`\n"
+        f"Отправьте этот ID друзьям для команды /join\n\n"
+        f"Нажмите кнопку ниже, чтобы начать:",
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
+    logger.info(f"Создана комната: {room_id}")
 
-async def join(update: Update, context: CallbackContext):
+async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик /join"""
     if not context.args:
         await update.message.reply_text("Укажите ID комнаты: /join ABC123")
         return
-    room_id = context.args[0]
+    
+    room_id = context.args[0].upper()
     if room_id not in active_games:
         await update.message.reply_text("❌ Комната не найдена!")
         return
-    game_url = f"{FRONTEND_URL}/?room={room_id}"
+    
+    game_url = f"{FRONTEND_URL}?room={room_id}"
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("🎮 Присоединиться к игре", url=game_url)
     ]])
+    
     await update.message.reply_text(
-        f"Вы присоединились к комнате `{room_id}`!",
+        f"Вы присоединились к комнате `{room_id}`!\nНажмите кнопку:",
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
 
-# --- WebSocket сервер (обработчик) ---
+# --- WebSocket сервер ---
 async def websocket_handler(request):
+    """Обработчик WebSocket соединений"""
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    room_id = request.query.get('room')
+    
+    room_id = request.query.get('room', '').upper()
     if not room_id or room_id not in active_games:
         await ws.close(code=1008, message=b'Invalid room')
         return ws
-    # Регистрируем соединение в комнате
+    
+    # Регистрация соединения
     if room_id not in ws_connections:
         ws_connections[room_id] = []
     ws_connections[room_id].append(ws)
+    
     try:
-        # Отправляем текущее состояние новому игроку
+        # Отправляем текущее состояние
         await ws.send_json({
             'type': 'state_update',
             'game': active_games[room_id]
         })
-        # Обрабатываем сообщения от клиента
+        
+        # Обработка сообщений
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
-                data = json.loads(msg.data)
-                await handle_game_action(room_id, data, ws)
+                try:
+                    data = json.loads(msg.data)
+                    await handle_game_action(room_id, data, ws)
+                except json.JSONDecodeError:
+                    pass
+                    
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
     finally:
         # Удаляем соединение при отключении
-        ws_connections[room_id].remove(ws)
-        if not ws_connections[room_id]:
-            del ws_connections[room_id]
+        if room_id in ws_connections and ws in ws_connections[room_id]:
+            ws_connections[room_id].remove(ws)
+            if not ws_connections[room_id]:
+                del ws_connections[room_id]
+    
     return ws
 
 async def handle_game_action(room_id, data, ws):
+    """Обработка игровых действий"""
     game = active_games.get(room_id)
     if not game:
         return
+    
     action = data.get('action')
-    # Пример обработки действия "открыть карточку"
+    
     if action == 'reveal':
-        index = data['index']
-        if 0 <= index < 25 and not game['revealed'][index]:
+        index = data.get('index')
+        if index is None or not 0 <= index < 25:
+            return
+        
+        if not game['revealed'][index]:
             game['revealed'][index] = True
             color = game['key'][index]
-            # Рассылаем обновление всем в комнате
+            
+            # Рассылаем обновление всем игрокам
             await broadcast(room_id, {
                 'type': 'card_revealed',
                 'index': index,
-                'color': color
+                'color': color,
+                'current_team': game['current_team']
             })
-            # Проверяем условия победы/поражения
+            
+            # Проверяем условия конца игры
             await check_game_over(room_id, color)
+    
+    elif action == 'hint':
+        # Логика для подсказки (упрощённая версия)
+        game['hint'] = data.get('hint')
+        game['hint_number'] = data.get('number')
+        game['guesses_left'] = game['hint_number'] + 1
+        game['status'] = 'guessing'
+        
+        await broadcast(room_id, {
+            'type': 'hint_given',
+            'hint': game['hint'],
+            'number': game['hint_number'],
+            'team': game['current_team']
+        })
 
 async def broadcast(room_id, message):
+    """Рассылка сообщения всем в комнате"""
     if room_id in ws_connections:
         for ws in ws_connections[room_id]:
             try:
@@ -137,40 +191,112 @@ async def broadcast(room_id, message):
                 pass
 
 async def check_game_over(room_id, last_color):
-    game = active_games[room_id]
-    # Логика проверки победы (упрощённая)
-    red_remaining = sum(1 for i, c in enumerate(game['key']) if c == 'red' and not game['revealed'][i])
-    blue_remaining = sum(1 for i, c in enumerate(game['key']) if c == 'blue' and not game['revealed'][i])
+    """Проверка условий завершения игры"""
+    game = active_games.get(room_id)
+    if not game:
+        return
+    
     if last_color == 'black':
+        # Попали на убийцу
         winner = 'blue' if game['current_team'] == 'red' else 'red'
-        await broadcast(room_id, {'type': 'game_over', 'winner': winner, 'reason': 'assassin'})
-    elif red_remaining == 0:
-        await broadcast(room_id, {'type': 'game_over', 'winner': 'red', 'reason': 'all_found'})
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': winner,
+            'reason': 'assassin'
+        })
+        if room_id in active_games:
+            del active_games[room_id]
+    
+    # Подсчёт оставшихся карт
+    red_remaining = sum(1 for i, c in enumerate(game['key']) 
+                       if c == 'red' and not game['revealed'][i])
+    blue_remaining = sum(1 for i, c in enumerate(game['key']) 
+                        if c == 'blue' and not game['revealed'][i])
+    
+    if red_remaining == 0:
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': 'red',
+            'reason': 'all_found'
+        })
+        if room_id in active_games:
+            del active_games[room_id]
     elif blue_remaining == 0:
-        await broadcast(room_id, {'type': 'game_over', 'winner': 'blue', 'reason': 'all_found'})
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': 'blue',
+            'reason': 'all_found'
+        })
+        if room_id in active_games:
+            del active_games[room_id]
 
-# --- Запуск приложения ---
-async def main():
-    # Инициализация Telegram бота
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("newgame", newgame))
-    app.add_handler(CommandHandler("join", join))
-    # Запуск бота в фоне
-    await app.initialize()
-    updater = await app.updater.start_polling()
-    # Настройка HTTP и WebSocket сервера
+# --- Вебхук обработчик ---
+async def handle_webhook(request):
+    """Принимаем обновления от Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        await app.update_queue.put(update)
+        return web.Response(text="OK", status=200)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return web.Response(text="Error", status=500)
+
+# --- Инициализация бота ---
+app = Application.builder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start_command))
+app.add_handler(CommandHandler("newgame", newgame_command))
+app.add_handler(CommandHandler("join", join_command))
+
+async def start_server():
+    """Запуск сервера"""
+    logger.info("Запуск сервера...")
+    
+    # Устанавливаем вебхук
+    webhook_url = f"{RENDER_URL}/telegram"
+    await app.bot.set_webhook(webhook_url)
+    logger.info(f"Вебхук установлен: {webhook_url}")
+    
+    # Настройка aiohttp сервера
     aiohttp_app = web.Application()
     aiohttp_app.router.add_get('/ws', websocket_handler)
+    aiohttp_app.router.add_post('/telegram', handle_webhook)
+    
+    # Статическая страница для проверки
+    async def index(request):
+        return web.Response(text="Codenames Bot работает! ✅")
+    
+    aiohttp_app.router.add_get('/', index)
+    
     runner = web.AppRunner(aiohttp_app)
     await runner.setup()
-    site = TCPSite(runner, '0.0.0.0', PORT)
+    
+    port = int(os.environ.get('PORT', 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"🚀 Сервер запущен на порту {PORT}")
-    print(f"🤖 Бот активен. WebSocket endpoint: /ws")
+    
+    logger.info(f"Сервер запущен на порту {port}")
+    print(f"✅ Сервер запущен! Проверьте: {RENDER_URL}")
+    print(f"🤖 Бот активен. Фронтенд: {FRONTEND_URL}")
+    
     # Бесконечное ожидание
-    await asyncio.Event().wait()
+    await asyncio.Future()
 
+# --- Точка входа ---
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    # Проверка обязательных переменных
+    required_vars = ['BOT_TOKEN', 'RENDER_URL', 'FRONTEND_URL']
+    missing = [var for var in required_vars if not os.environ.get(var)]
+    
+    if missing:
+        print(f"❌ Ошибка: отсутствуют переменные окружения: {', '.join(missing)}")
+        print("Добавьте их в настройках Render:")
+        print("1. BOT_TOKEN - токен от @BotFather")
+        print(f"2. RENDER_URL - ваш URL на Render (сейчас: {os.environ.get('RENDER_URL', 'не задан')})")
+        print(f"3. FRONTEND_URL - ваш GitHub Pages (сейчас: {os.environ.get('FRONTEND_URL', 'не задан')})")
+        exit(1)
+    
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        logger.info("Сервер остановлен")
