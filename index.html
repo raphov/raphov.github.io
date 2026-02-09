@@ -1,0 +1,68 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Codenames Online</title>
+    <style>
+        body { font-family: Arial; text-align: center; padding: 20px; }
+        #board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; max-width: 600px; margin: 20px auto; }
+        .card {
+            border: 2px solid #333; border-radius: 8px; padding: 20px;
+            background: #f8f9fa; cursor: pointer; font-weight: bold; user-select: none;
+        }
+        .card.revealed.red { background: #ff6b6b; color: white; }
+        .card.revealed.blue { background: #4d96ff; color: white; }
+        .card.revealed.black { background: #2d3436; color: white; }
+        .card.revealed.neutral { background: #fdcb6e; }
+        #status { margin: 20px; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <h1>🎮 Codenames Online</h1>
+    <div id="roomInfo">Комната: <span id="roomId">...</span></div>
+    <div id="status">Подключение к игре...</div>
+    <div id="board"></div>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room') || prompt('Введите ID комнаты:');
+        document.getElementById('roomId').textContent = roomId;
+        let ws;
+        function connect() {
+            // Подключаемся к WebSocket-серверу на Render
+            const wsUrl = `wss://your-render-app.onrender.com/ws?room=${roomId}`;
+            ws = new WebSocket(wsUrl);
+            ws.onopen = () => document.getElementById('status').textContent = '✅ Игра подключена!';
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'state_update') updateBoard(data.game);
+                if (data.type === 'card_revealed') revealCard(data.index, data.color);
+                if (data.type === 'game_over') alert(`Победили ${data.winner}! (${data.reason})`);
+            };
+            ws.onclose = () => {
+                document.getElementById('status').textContent = '❌ Соединение потеряно. Переподключение...';
+                setTimeout(connect, 3000);
+            };
+        }
+        function updateBoard(game) {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            game.words.forEach((word, i) => {
+                const card = document.createElement('div');
+                card.className = 'card' + (game.revealed[i] ? ` revealed ${game.key[i]}` : '');
+                card.textContent = word;
+                card.onclick = () => {
+                    if (!game.revealed[i] && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ action: 'reveal', index: i }));
+                    }
+                };
+                board.appendChild(card);
+            });
+        }
+        function revealCard(index, color) {
+            const cards = document.getElementsByClassName('card');
+            cards[index].classList.add('revealed', color);
+        }
+        connect();
+    </script>
+</body>
+</html>
