@@ -1,68 +1,274 @@
 
 <!DOCTYPE html>
 <html>
+
+            const wsUrl = `wss://codenames-u88n.onrender.com/ws?room=${roomId}`;<!DOCTYPE html>
+<html lang="ru">
 <head>
+    <meta charset="UTF-8">
     <title>Codenames Online</title>
     <style>
-        body { font-family: Arial; text-align: center; padding: 20px; }
-        #board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; max-width: 600px; margin: 20px auto; }
-        .card {
-            border: 2px solid #333; border-radius: 8px; padding: 20px;
-            background: #f8f9fa; cursor: pointer; font-weight: bold; user-select: none;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
         }
-        .card.revealed.red { background: #ff6b6b; color: white; }
-        .card.revealed.blue { background: #4d96ff; color: white; }
-        .card.revealed.black { background: #2d3436; color: white; }
-        .card.revealed.neutral { background: #fdcb6e; }
-        #status { margin: 20px; font-size: 1.2em; }
+        .container { max-width: 800px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 30px; }
+        h1 { color: #4cc9f0; margin-bottom: 10px; }
+        .room-info { background: #16213e; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
+        #roomDisplay { font-family: monospace; font-size: 1.5em; color: #f72585; }
+        .status {
+            padding: 15px; border-radius: 10px; margin: 15px 0;
+            background: #0f3460; text-align: center;
+        }
+        .connected { background: #2a9d8f; }
+        .error { background: #e63946; }
+        .board {
+            display: grid; grid-template-columns: repeat(5, 1fr);
+            gap: 10px; margin: 30px 0;
+        }
+        .card {
+            aspect-ratio: 3/4; background: #f1faee;
+            border-radius: 8px; display: flex;
+            align-items: center; justify-content: center;
+            color: #1d3557; font-weight: bold;
+            cursor: pointer; user-select: none;
+            transition: all 0.3s; padding: 10px;
+            text-align: center; word-break: break-word;
+            border: 3px solid transparent;
+        }
+        .card:hover { transform: translateY(-5px); border-color: #4cc9f0; }
+        .card.red { background: #e63946; color: white; }
+        .card.blue { background: #457b9d; color: white; }
+        .card.black { background: #1d3557; color: white; }
+        .card.neutral { background: #f4a261; color: #1d3557; }
+        .card.opened { cursor: default; }
+        .card.opened:hover { transform: none; border-color: transparent; }
+        .controls {
+            display: flex; justify-content: center;
+            gap: 20px; margin-top: 30px;
+        }
+        button {
+            padding: 12px 30px; border: none;
+            border-radius: 25px; background: #7209b7;
+            color: white; font-weight: bold;
+            cursor: pointer; transition: 0.3s;
+        }
+        button:hover { background: #560bad; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .players { margin-top: 20px; font-size: 0.9em; color: #adb5bd; }
+        footer {
+            text-align: center; margin-top: 40px;
+            color: #6c757d; font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
-    <h1>🎮 Codenames Online</h1>
-    <div id="roomInfo">Комната: <span id="roomId">...</span></div>
-    <div id="status">Подключение к игре...</div>
-    <div id="board"></div>
+    <div class="container">
+        <header>
+            <h1>🕵️ Codenames Online</h1>
+            <p>Играйте в Codenames через Telegram бота</p>
+        </header>
+        
+        <div class="room-info">
+            <div>Комната: <span id="roomDisplay">Загрузка...</span></div>
+            <div id="connectionStatus" class="status">Установка соединения...</div>
+        </div>
+        
+        <div id="gameArea" style="display: none;">
+            <div class="board" id="gameBoard">
+                <!-- 25 карточек будут созданы JavaScript -->
+            </div>
+            
+            <div class="controls">
+                <button id="btnRestart" disabled>Новая игра</button>
+                <button id="btnCopyLink">📋 Копировать ссылку</button>
+            </div>
+            
+            <div class="players" id="playerCount">Игроков онлайн: 1</div>
+        </div>
+        
+        <footer>
+            <p>Используйте бота для создания комнаты • Поддержка WebSocket • Автоматическая синхронизация</p>
+        </footer>
+    </div>
+
     <script>
+        // Получаем ID комнаты из URL
         const urlParams = new URLSearchParams(window.location.search);
-        const roomId = urlParams.get('room') || prompt('Введите ID комнаты:');
-        document.getElementById('roomId').textContent = roomId;
-        let ws;
-        function connect() {
-            // Подключаемся к WebSocket-серверу на Render
-            const wsUrl = `wss://codenames-u88n.onrender.com/ws?room=${roomId}`;
-            ws = new WebSocket(wsUrl);
-            ws.onopen = () => document.getElementById('status').textContent = '✅ Игра подключена!';
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'state_update') updateBoard(data.game);
-                if (data.type === 'card_revealed') revealCard(data.index, data.color);
-                if (data.type === 'game_over') alert(`Победили ${data.winner}! (${data.reason})`);
+        let roomId = urlParams.get('room');
+        
+        // Если нет в URL - проверяем localStorage
+        if (!roomId) {
+            roomId = localStorage.getItem('last_room');
+        }
+        
+        // Если всё ещё нет - запрашиваем у пользователя
+        if (!roomId) {
+            roomId = prompt('Введите код комнаты (получите у бота):', '').toUpperCase();
+            if (!roomId) {
+                document.body.innerHTML = '<div class="container"><h1>❌ Требуется код комнаты</h1><p>Получите код у Telegram бота командой /new</p></div>';
+                throw new Error('Требуется код комнаты');
+            }
+        }
+        
+        // Сохраняем для будущих посещений
+        localStorage.setItem('last_room', roomId);
+        document.getElementById('roomDisplay').textContent = roomId;
+        
+        // Подключаемся к WebSocket серверу
+        const renderUrl = 'codenames-u88n.onrender.com'; // ЗАМЕНИТЕ на ваш домен Render
+        const wsUrl = `wss://${renderUrl}/ws?room=${roomId}`;
+        let socket = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        
+        function connectWebSocket() {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.textContent = 'Подключение к серверу...';
+            statusEl.className = 'status';
+            
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                statusEl.textContent = '✅ Подключено к игровому серверу';
+                statusEl.className = 'status connected';
+                reconnectAttempts = 0;
+                document.getElementById('gameArea').style.display = 'block';
+                pingInterval = setInterval(() => {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({action: 'ping'}));
+                    }
+                }, 30000);
             };
-            ws.onclose = () => {
-                document.getElementById('status').textContent = '❌ Соединение потеряно. Переподключение...';
-                setTimeout(connect, 3000);
+            
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleServerMessage(data);
+                } catch (e) {
+                    console.error('Ошибка парсинга:', e);
+                }
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket ошибка:', error);
+                statusEl.textContent = '⚠️ Ошибка соединения';
+                statusEl.className = 'status error';
+            };
+            
+            socket.onclose = (event) => {
+                clearInterval(pingInterval);
+                statusEl.textContent = '❌ Соединение прервано';
+                statusEl.className = 'status error';
+                
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(() => {
+                        statusEl.textContent = `Переподключение (${reconnectAttempts}/${maxReconnectAttempts})...`;
+                        connectWebSocket();
+                    }, 2000 * reconnectAttempts);
+                } else {
+                    statusEl.textContent = 'Не удалось подключиться. Обновите страницу.';
+                }
             };
         }
-        function updateBoard(game) {
-            const board = document.getElementById('board');
-            board.innerHTML = '';
-            game.words.forEach((word, i) => {
-                const card = document.createElement('div');
-                card.className = 'card' + (game.revealed[i] ? ` revealed ${game.key[i]}` : '');
-                card.textContent = word;
-                card.onclick = () => {
-                    if (!game.revealed[i] && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ action: 'reveal', index: i }));
+        
+        let gameData = null;
+        let pingInterval = null;
+        
+        function handleServerMessage(data) {
+            console.log('Получено от сервера:', data);
+            
+            switch (data.type) {
+                case 'init':
+                    gameData = data;
+                    renderBoard();
+                    break;
+                    
+                case 'card_opened':
+                    if (gameData) {
+                        gameData.opened[data.index] = true;
+                        updateCard(data.index, data.color);
                     }
-                };
+                    break;
+                    
+                case 'player_joined':
+                    document.getElementById('playerCount').textContent = 
+                        `Игроков онлайн: ${data.count}`;
+                    break;
+                    
+                case 'game_over':
+                    alert(`🎉 Игра окончена! Победили: ${data.winner.toUpperCase()} (${data.reason})`);
+                    break;
+                    
+                case 'pong':
+                    // Подтверждение активности
+                    break;
+            }
+        }
+        
+        function renderBoard() {
+            if (!gameData) return;
+            
+            const board = document.getElementById('gameBoard');
+            board.innerHTML = '';
+            
+            gameData.words.forEach((word, index) => {
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.textContent = word;
+                card.dataset.index = index;
+                
+                if (gameData.opened[index]) {
+                    card.classList.add('opened');
+                    card.classList.add(gameData.colors[index]);
+                } else {
+                    card.onclick = () => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({
+                                action: 'click_card',
+                                index: index
+                            }));
+                        }
+                    };
+                }
+                
                 board.appendChild(card);
             });
         }
-        function revealCard(index, color) {
-            const cards = document.getElementsByClassName('card');
-            cards[index].classList.add('revealed', color);
+        
+        function updateCard(index, color) {
+            const cards = document.querySelectorAll('.card');
+            if (cards[index]) {
+                cards[index].classList.add('opened', color);
+                cards[index].onclick = null;
+            }
         }
-        connect();
+        
+        // Копирование ссылки
+        document.getElementById('btnCopyLink').onclick = () => {
+            const link = window.location.href;
+            navigator.clipboard.writeText(link).then(() => {
+                alert('✅ Ссылка скопирована в буфер!');
+            });
+        };
+        
+        // Начинаем подключение
+        connectWebSocket();
+        
+        // Автоматическое переподключение при потере фокуса
+        window.addEventListener('focus', () => {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    connectWebSocket();
+                }
+            }
+        });
     </script>
 </body>
 </html>
