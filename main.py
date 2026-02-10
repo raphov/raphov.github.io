@@ -798,4 +798,304 @@ async def handle_websocket_message(room_id: str, message: str, ws: web.WebSocket
                 return
             
             # Рассылаем обновление всем игрокам
-           
+            await broadcast_to_room(room_id, {
+                'type': 'card_revealed',
+                'index': result['index'],
+                'color': result['color'],
+                'game_state': result['game_state'],
+                'timestamp': datetime.now().isoformat()
+            })
+            
+            # Если игра окончена
+            if result['game_over']:
+                await broadcast_to_room(room_id, {
+                    'type': 'game_over',
+                    'winner': result['winner'],
+                    'game_state': result['game_state'],
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Через 30 секунд удаляем комнату
+                asyncio.create_task(cleanup_room_after_delay(room_id, 30))
+            
+            # Переключаем команду, если нужно
+            elif result['color'] not in [room.game_state['current_team'], 'neutral', 'black']:
+                room.switch_team()
+                
+                await broadcast_to_room(room_id, {
+                    'type': 'turn_switch',
+                    'current_team': room.game_state['current_team'],
+                    'current_turn': room.game_state['current_turn'],
+                    'timestamp': datetime.now().isoformat()
+                })
+        
+        elif action == 'ping':
+            await ws.send_json({
+                'type': 'pong',
+                'timestamp': datetime.now().isoformat(),
+                'server_time': datetime.now().isoformat()
+            })
+        
+        elif action == 'get_state':
+            await ws.send_json({
+                'type': 'state_update',
+                'game_state': room.get_public_state(),
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        elif action == 'player_info':
+            # Информация об игроке (для будущего использования)
+            await ws.send_json({
+                'type': 'player_info',
+                'players_count': len(room.players),
+                'online_count': len(room.ws_connections),
+                'timestamp': datetime.now().isoformat()
+            })
+    
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON received: {message[:100]}")
+        await ws.send_json({'type': 'error', 'message': 'Invalid JSON'})
+    except Exception as e:
+        logger.error(f"Error handling WebSocket message: {e}")
+        await ws.send_json({'type': 'error', 'message': 'Internal server error'})
+
+async def broadcast_to_room(room_id: str, message: Dict):
+    """Рассылка сообщения всем подключённым клиентам комнаты"""
+    if room_id not in active_rooms:
+        return
+    
+    room = active_rooms[room_id]
+    disconnected = []
+    
+    for ws in room.ws_connections:
+        if not ws.closed:
+            try:
+                await ws.send_json(message)
+            except Exception as e:
+                logger.error(f"Failed to send to WebSocket: {e}")
+                disconnected.append(ws)
+        else:
+            disconnected.append(ws)
+    
+    # Удаляем отключённые соединения
+    for ws in disconnected:
+        if ws in room.ws_connections:
+            room.ws_connections.remove(ws)
+
+async def cleanup_room_after_delay(room_id: str, delay_seconds: int):
+    """Удаляет комнату через указанное время"""
+    await asyncio.sleep(delay_seconds)
+    
+    if room_id in active_rooms:
+        room = active_rooms[room_id]
+        if not room.ws_connections:  # Если всё ещё нет подключений
+            room.cleanup()
+            del active_rooms[room_id]
+            logger.info(f"Комната {room_id} удалена после завершения игры")
+
+# ==================== HTTP ОБРАБОТЧИКИ ====================
+async def telegram_webhook_handler(request):
+    """Обработчик входящих обновлений от Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        
+        # Логируем входящее обновление
+        if update.message:
+            user = update.effective_user
+            logger.info(f"Incoming message from {user.id} (@{user.username}): {update.message.text}")
+        elif update.callback_query:
+            user = update.effective_user
+            logger.info(f"Incoming callback from {user.id} (@{user.username}): {update.callback_query.data}")
+        
+        # Передаём обновление в очередь обработки
+        await app.update_queue.put(update)
+        
+        return web.Response(text="OK", status=200)
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+        return web.Response(text="Bad Request", status=400)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return web.Response(text="Error", status=500)
+
+async def health_check(request):
+    """Проверка работоспособности сервера"""
+    return web.Response(text=f"Codenames Server is running\nActive rooms: {len(active_rooms)}\nVersion: 2.0")
+
+async def debug_info(request):
+    """Отладочная информация о сервере"""
+    rooms_info = []
+    for room_id, room in active_rooms.items():
+        rooms_info.append({
+            'room_id': room_id,
+            'players': len(room.players),
+            'connections': len(room.ws_connections),
+            'created': room.created_at.isoformat(),
+            'status': room.game_state['game_status'],
+            'captains': room.captains
+        })
+    
+    return web.json_response({
+        'status': 'running',
+        'active_rooms': len(active_rooms),
+        'total_players': sum(len(r.players) for r in active_rooms.values()),
+        'total_connections': sum(len(r.ws_connections) for r in active_rooms.values()),
+        'rooms': rooms_info,
+        'timestamp': datetime.now().isoformat()
+    })
+
+# ==================== ИНИЦИАЛИЗАЦИЯ И ЗАПУСК ====================
+# Глобальное приложение Telegram
+app = Application.builder().token(BOT_TOKEN).build()
+
+async def setup_application():
+    """Настройка приложения Telegram"""
+    # Регистрируем обработчики команд
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("new", new_command))
+    app.add_handler(CommandHandler("join", join_command))
+    app.add_handler(CommandHandler("key", key_command))
+    app.add_handler(CommandHandler("list", list_command))
+    app.add_handler(CommandHandler("help", help_command))
+    
+    # Регистрируем обработчики callback-запросов
+    app.add_handler(CallbackQueryHandler(role_callback, pattern="^role_"))
+    app.add_handler(CallbackQueryHandler(join_callback, pattern="^join_"))
+    
+    # Обработчик неизвестных команд
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    
+    # Инициализируем приложение
+    await app.initialize()
+    
+    # Запускаем обработку очереди обновлений
+    await app.start()
+    asyncio.create_task(app.updater.start_polling())
+    
+    logger.info("✅ Приложение Telegram бота инициализировано")
+
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик неизвестных команд"""
+    await update.message.reply_text(
+        "❓ Неизвестная команда.\n\n"
+        "Доступные команды:\n"
+        "`/start` - Начало работы\n"
+        "`/new` - Создать комнату\n"
+        "`/join [код]` - Присоединиться\n"
+        "`/key [код]` - Ключевая карта\n"
+        "`/list` - Список комнат\n"
+        "`/help` - Справка",
+        parse_mode='Markdown'
+    )
+
+async def cleanup_old_rooms():
+    """Периодическая очистка старых комнат"""
+    while True:
+        await asyncio.sleep(300)  # Каждые 5 минут
+        
+        rooms_to_remove = []
+        for room_id, room in active_rooms.items():
+            if not room.is_active():
+                rooms_to_remove.append(room_id)
+        
+        for room_id in rooms_to_remove:
+            room = active_rooms[room_id]
+            room.cleanup()
+            del active_rooms[room_id]
+            logger.info(f"Удалена устаревшая комната {room_id}")
+        
+        if rooms_to_remove:
+            logger.info(f"Очищено {len(rooms_to_remove)} устаревших комнат")
+
+async def main():
+    """Основная функция запуска сервера"""
+    logger.info("="*70)
+    logger.info("🚀 ЗАПУСК CODENAMES СЕРВЕРА v2.0")
+    logger.info("="*70)
+    
+    logger.info(f"🤖 BOT_TOKEN: {'установлен' if BOT_TOKEN else 'НЕТ!'}")
+    logger.info(f"🌐 RENDER_URL: {RENDER_URL}")
+    logger.info(f"🎮 FRONTEND_URL: {FRONTEND_URL}")
+    
+    try:
+        # Устанавливаем вебхук
+        bot = Bot(token=BOT_TOKEN)
+        webhook_url = f"{RENDER_URL}/telegram"
+        
+        logger.info(f"Устанавливаю вебхук на: {webhook_url}")
+        await bot.set_webhook(webhook_url)
+        
+        # Получаем информацию о вебхуке для проверки
+        webhook_info = await bot.get_webhook_info()
+        logger.info(f"✅ Вебхук установлен: {webhook_info.url}")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка при установке вебхука: {e}")
+        raise
+    
+    # Настраиваем приложение Telegram
+    await setup_application()
+    
+    # Настраиваем HTTP сервер
+    server = web.Application()
+    
+    # Регистрируем маршруты:
+    server.router.add_get('/', health_check)               # GET / для проверки
+    server.router.add_post('/telegram', telegram_webhook_handler)  # POST /telegram для вебхука
+    server.router.add_get('/ws', websocket_handler)        # WebSocket для игры
+    server.router.add_get('/debug', debug_info)            # Отладочная информация
+    
+    # Запускаем сервер
+    runner = web.AppRunner(server)
+    await runner.setup()
+    
+    port = int(os.environ.get('PORT', 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    # Запускаем очистку старых комнат
+    asyncio.create_task(cleanup_old_rooms())
+    
+    logger.info("="*70)
+    logger.info(f"✅ СЕРВЕР ЗАПУЩЕН НА ПОРТУ {port}")
+    logger.info(f"🌐 WebSocket: wss://{RENDER_URL.replace('https://', '')}/ws")
+    logger.info(f"🤖 Webhook: {webhook_url}")
+    logger.info(f"🎮 Фронтенд: {FRONTEND_URL}")
+    logger.info("="*70)
+    
+    print("\n" + "="*70)
+    print("✅ ВСЁ ГОТОВО! Сервер запущен и работает.")
+    print("="*70)
+    print(f"1. Проверьте вебхук: {webhook_url}")
+    print(f"2. Протестируйте бота: /start в Telegram")
+    print(f"3. Создайте комнату: /new")
+    print(f"4. Фронтенд: {FRONTEND_URL}")
+    print("="*70 + "\n")
+    
+    # Бесконечное ожидание
+    await asyncio.Future()
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Сервер остановлен по запросу пользователя")
+        
+        # Очищаем все комнаты при выходе
+        for room_id, room in active_rooms.items():
+            room.cleanup()
+        active_rooms.clear()
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка при запуске: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        print("\n" + "="*70)
+        print("ПРОВЕРЬТЕ НАСТРОЙКИ RENDER:")
+        print(f"BOT_TOKEN = {'установлен' if BOT_TOKEN else 'НЕТ!'}")
+        print(f"RENDER_URL = {RENDER_URL}")
+        print(f"FRONTEND_URL = {FRONTEND_URL}")
+        print("="*70 + "\n")
