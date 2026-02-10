@@ -1,8 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Codenames Online</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,51 +16,134 @@
         .container { max-width: 800px; margin: 0 auto; }
         header { text-align: center; margin-bottom: 30px; }
         h1 { color: #4cc9f0; margin-bottom: 10px; }
-        .room-info { background: #16213e; padding: 15px; border-radius: 10px; margin-bottom: 20px; }
-        #roomDisplay { font-family: monospace; font-size: 1.5em; color: #f72585; }
-        .status {
-            padding: 15px; border-radius: 10px; margin: 15px 0;
-            background: #0f3460; text-align: center;
+        .room-info { 
+            background: #16213e; 
+            padding: 15px; 
+            border-radius: 10px; 
+            margin-bottom: 20px;
+            text-align: center;
         }
-        .connected { background: #2a9d8f; }
-        .error { background: #e63946; }
+        #roomDisplay { 
+            font-family: monospace; 
+            font-size: 1.5em; 
+            color: #f72585; 
+            font-weight: bold;
+        }
+        .status {
+            padding: 15px; 
+            border-radius: 10px; 
+            margin: 15px 0;
+            background: #0f3460; 
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .status.connected { background: #2a9d8f; }
+        .status.error { background: #e63946; }
+        
+        /* Игровая область */
+        #gameArea { margin-top: 30px; }
         .board {
-            display: grid; grid-template-columns: repeat(5, 1fr);
-            gap: 10px; margin: 30px 0;
+            display: grid; 
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px; 
+            margin: 20px 0;
         }
         .card {
-            aspect-ratio: 3/4; background: #f1faee;
-            border-radius: 8px; display: flex;
-            align-items: center; justify-content: center;
-            color: #1d3557; font-weight: bold;
-            cursor: pointer; user-select: none;
-            transition: all 0.3s; padding: 10px;
-            text-align: center; word-break: break-word;
+            aspect-ratio: 3/4; 
+            background: #f1faee;
+            border-radius: 8px; 
+            display: flex;
+            align-items: center; 
+            justify-content: center;
+            color: #1d3557; 
+            font-weight: bold;
+            cursor: pointer; 
+            user-select: none;
+            transition: all 0.3s; 
+            padding: 10px;
+            text-align: center; 
+            word-break: break-word;
             border: 3px solid transparent;
+            font-size: 14px;
         }
-        .card:hover { transform: translateY(-5px); border-color: #4cc9f0; }
-        .card.red { background: #e63946; color: white; }
-        .card.blue { background: #457b9d; color: white; }
-        .card.black { background: #1d3557; color: white; }
-        .card.neutral { background: #f4a261; color: #1d3557; }
-        .card.opened { cursor: default; }
-        .card.opened:hover { transform: none; border-color: transparent; }
+        .card:hover { 
+            transform: translateY(-5px); 
+            border-color: #4cc9f0; 
+        }
+        /* Цвета открытых карточек */
+        .card.opened.red { background: #e63946; color: white; }
+        .card.opened.blue { background: #457b9d; color: white; }
+        .card.opened.black { background: #1d3557; color: white; }
+        .card.opened.neutral { background: #f4a261; color: #1d3557; }
+        .card.opened { 
+            cursor: default; 
+            border-color: transparent !important;
+        }
+        .card.opened:hover { transform: none; }
+        
         .controls {
-            display: flex; justify-content: center;
-            gap: 20px; margin-top: 30px;
+            display: flex; 
+            justify-content: center;
+            gap: 20px; 
+            margin-top: 30px;
         }
         button {
-            padding: 12px 30px; border: none;
-            border-radius: 25px; background: #7209b7;
-            color: white; font-weight: bold;
-            cursor: pointer; transition: 0.3s;
+            padding: 12px 30px; 
+            border: none;
+            border-radius: 25px; 
+            background: #7209b7;
+            color: white; 
+            font-weight: bold;
+            cursor: pointer; 
+            transition: 0.3s;
         }
         button:hover { background: #560bad; }
-        button:disabled { background: #6c757d; cursor: not-allowed; }
-        .players { margin-top: 20px; font-size: 0.9em; color: #adb5bd; }
+        button:disabled { 
+            background: #6c757d; 
+            cursor: not-allowed; 
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            padding: 15px;
+            background: #0f3460;
+            border-radius: 10px;
+        }
+        .team-display {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            min-width: 120px;
+        }
+        .team-red { background: #e63946; }
+        .team-blue { background: #457b9d; }
+        
         footer {
-            text-align: center; margin-top: 40px;
-            color: #6c757d; font-size: 0.9em;
+            text-align: center; 
+            margin-top: 40px;
+            color: #6c757d; 
+            font-size: 0.9em;
+        }
+        
+        /* Стили для ошибки */
+        .error-container {
+            text-align: center;
+            padding: 50px 20px;
+            background: #16213e;
+            border-radius: 10px;
+            margin-top: 50px;
+        }
+        .error-container h2 { color: #e63946; margin-bottom: 20px; }
+        .error-container a {
+            display: inline-block;
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #7209b7;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
         }
     </style>
 </head>
@@ -76,9 +159,24 @@
             <div id="connectionStatus" class="status">Установка соединения...</div>
         </div>
         
+        <!-- ИГРОВАЯ ОБЛАСТЬ (изначально скрыта) -->
         <div id="gameArea" style="display: none;">
+            <!-- Блок информации о командах -->
+            <div class="game-info">
+                <div class="team-display team-red" id="teamRed">
+                    <strong>Красные</strong><br>
+                    <span id="redCount">9 осталось</span>
+                </div>
+                <div id="currentTurn">Сейчас ходят: <span class="team-red">Красные</span></div>
+                <div class="team-display team-blue" id="teamBlue">
+                    <strong>Синие</strong><br>
+                    <span id="blueCount">8 осталось</span>
+                </div>
+            </div>
+            
+            <!-- ИГРОВОЕ ПОЛЕ (25 карточек) -->
             <div class="board" id="gameBoard">
-                <!-- 25 карточек будут созданы JavaScript -->
+                <!-- Карточки будут созданы JavaScript -->
             </div>
             
             <div class="controls">
@@ -89,43 +187,63 @@
             <div class="players" id="playerCount">Игроков онлайн: 1</div>
         </div>
         
+        <!-- Контейнер для ошибок -->
+        <div id="errorContainer" class="error-container" style="display: none;"></div>
+        
         <footer>
             <p>Используйте бота для создания комнаты • Поддержка WebSocket • Автоматическая синхронизация</p>
         </footer>
     </div>
 
     <script>
-        // Получаем ID комнаты из URL
+        // ==================== НАСТРОЙКИ ====================
+        const RENDER_URL = 'codenames-u88n.onrender.com'; // Ваш домен Render
+        
+        // ==================== ПОЛУЧЕНИЕ ID КОМНАТЫ ====================
         const urlParams = new URLSearchParams(window.location.search);
         let roomId = urlParams.get('room');
         
-        // Если нет в URL - проверяем localStorage
+        // Если нет комнаты в URL, показываем ошибку
         if (!roomId) {
-            roomId = localStorage.getItem('last_room');
+            document.getElementById('errorContainer').innerHTML = `
+                <h2>❌ Ошибка: нет кода комнаты</h2>
+                <p>Пожалуйста, откройте игру через кнопку в Telegram-боте</p>
+                <p>Команды бота:</p>
+                <ul style="text-align: left; display: inline-block; margin: 20px;">
+                    <li>/start - начало работы</li>
+                    <li>/new - создать новую комнату</li>
+                    <li>/join [код] - присоединиться</li>
+                </ul>
+                <p><a href="https://t.me/codenames_raphov_bot" target="_blank">Перейти к боту</a></p>
+            `;
+            document.getElementById('errorContainer').style.display = 'block';
+            document.getElementById('roomDisplay').textContent = 'НЕТ КОДА';
+            throw new Error('No room ID in URL');
         }
         
-        // Если всё ещё нет - запрашиваем у пользователя
-        if (!roomId) {
-            roomId = prompt('Введите код комнаты (получите у бота):', '').toUpperCase();
-            if (!roomId) {
-                document.body.innerHTML = '<div class="container"><h1>❌ Требуется код комнаты</h1><p>Получите код у Telegram бота командой /new</p></div>';
-                throw new Error('Требуется код комнаты');
-            }
-        }
-        
-        // Сохраняем для будущих посещений
+        // Сохраняем ID комнаты и отображаем
+        roomId = roomId.toUpperCase();
         localStorage.setItem('last_room', roomId);
         document.getElementById('roomDisplay').textContent = roomId;
         
-        // Подключаемся к WebSocket серверу
-        const renderUrl = 'codenames-u88n.onrender.com'; // ЗАМЕНИТЕ на ваш домен Render
-        const wsUrl = `wss://${renderUrl}/ws?room=${roomId}`;
+        // ==================== WEBSOCKET ПОДКЛЮЧЕНИЕ ====================
+        const wsUrl = `wss://${RENDER_URL}/ws?room=${roomId}`;
         let socket = null;
         let reconnectAttempts = 0;
         const maxReconnectAttempts = 5;
+        let gameData = null;
+        let pingInterval = null;
+        
+        // Элементы интерфейса
+        const statusEl = document.getElementById('connectionStatus');
+        const gameArea = document.getElementById('gameArea');
+        const gameBoard = document.getElementById('gameBoard');
+        const playerCountEl = document.getElementById('playerCount');
+        const redCountEl = document.getElementById('redCount');
+        const blueCountEl = document.getElementById('blueCount');
+        const currentTurnEl = document.getElementById('currentTurn');
         
         function connectWebSocket() {
-            const statusEl = document.getElementById('connectionStatus');
             statusEl.textContent = 'Подключение к серверу...';
             statusEl.className = 'status';
             
@@ -135,7 +253,8 @@
                 statusEl.textContent = '✅ Подключено к игровому серверу';
                 statusEl.className = 'status connected';
                 reconnectAttempts = 0;
-                document.getElementById('gameArea').style.display = 'block';
+                
+                // Запускаем пинг каждые 30 секунд
                 pingInterval = setInterval(() => {
                     if (socket.readyState === WebSocket.OPEN) {
                         socket.send(JSON.stringify({action: 'ping'}));
@@ -148,7 +267,7 @@
                     const data = JSON.parse(event.data);
                     handleServerMessage(data);
                 } catch (e) {
-                    console.error('Ошибка парсинга:', e);
+                    console.error('Ошибка парсинга JSON:', e);
                 }
             };
             
@@ -175,32 +294,35 @@
             };
         }
         
-        let gameData = null;
-        let pingInterval = null;
-        
+        // ==================== ОБРАБОТКА СООБЩЕНИЙ ОТ СЕРВЕРА ====================
         function handleServerMessage(data) {
             console.log('Получено от сервера:', data);
             
             switch (data.type) {
                 case 'init':
+                    // СЕРВЕР ПРИСЛАЛ ДАННЫЕ ИГРЫ - СОЗДАЁМ ПОЛЕ
                     gameData = data;
-                    renderBoard();
+                    renderGameBoard();
+                    updateGameInfo();
+                    gameArea.style.display = 'block';
                     break;
                     
                 case 'card_opened':
+                    // ОБНОВЛЯЕМ ОТКРЫТУЮ КАРТОЧКУ
                     if (gameData) {
-                        gameData.opened[data.index] = true;
+                        gameData.revealed[data.index] = true;
+                        gameData.current_team = data.current_team;
                         updateCard(data.index, data.color);
+                        updateGameInfo();
                     }
                     break;
                     
                 case 'player_joined':
-                    document.getElementById('playerCount').textContent = 
-                        `Игроков онлайн: ${data.count}`;
+                    playerCountEl.textContent = `Игроков онлайн: ${data.count}`;
                     break;
                     
                 case 'game_over':
-                    alert(`🎉 Игра окончена! Победили: ${data.winner.toUpperCase()} (${data.reason})`);
+                    alert(`🎉 Игра окончена! Победили: ${data.winner.toUpperCase()}\nПричина: ${data.reason}`);
                     break;
                     
                 case 'pong':
@@ -209,24 +331,30 @@
             }
         }
         
-        function renderBoard() {
-            if (!gameData) return;
+        // ==================== СОЗДАНИЕ ИГРОВОГО ПОЛЯ ====================
+        function renderGameBoard() {
+            if (!gameData || !gameData.words) {
+                console.error('Нет данных для отрисовки игрового поля');
+                return;
+            }
             
-            const board = document.getElementById('gameBoard');
-            board.innerHTML = '';
+            gameBoard.innerHTML = '';
             
+            // Создаём 25 карточек
             gameData.words.forEach((word, index) => {
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.textContent = word;
                 card.dataset.index = index;
                 
-                if (gameData.opened[index]) {
+                // Если карточка уже открыта
+                if (gameData.revealed[index]) {
                     card.classList.add('opened');
                     card.classList.add(gameData.colors[index]);
                 } else {
+                    // Карточка закрыта - можно кликать
                     card.onclick = () => {
-                        if (socket.readyState === WebSocket.OPEN) {
+                        if (socket && socket.readyState === WebSocket.OPEN) {
                             socket.send(JSON.stringify({
                                 action: 'click_card',
                                 index: index
@@ -235,30 +363,70 @@
                     };
                 }
                 
-                board.appendChild(card);
+                gameBoard.appendChild(card);
             });
         }
         
+        // ==================== ОБНОВЛЕНИЕ ОДНОЙ КАРТОЧКИ ====================
         function updateCard(index, color) {
             const cards = document.querySelectorAll('.card');
             if (cards[index]) {
                 cards[index].classList.add('opened', color);
-                cards[index].onclick = null;
+                cards[index].onclick = null; // Убираем обработчик клика
             }
         }
         
-        // Копирование ссылки
+        // ==================== ОБНОВЛЕНИЕ ИНФОРМАЦИИ ОБ ИГРЕ ====================
+        function updateGameInfo() {
+            if (!gameData) return;
+            
+            // Считаем оставшиеся карточки
+            let redLeft = 0;
+            let blueLeft = 0;
+            
+            for (let i = 0; i < 25; i++) {
+                if (!gameData.revealed[i]) {
+                    if (gameData.colors[i] === 'red') redLeft++;
+                    if (gameData.colors[i] === 'blue') blueLeft++;
+                }
+            }
+            
+            // Обновляем счетчики
+            redCountEl.textContent = `${redLeft} осталось`;
+            blueCountEl.textContent = `${blueLeft} осталось`;
+            
+            // Обновляем текущую команду
+            const teamName = gameData.current_team === 'red' ? 'Красные' : 'Синие';
+            const teamClass = gameData.current_team === 'red' ? 'team-red' : 'team-blue';
+            currentTurnEl.innerHTML = `Сейчас ходят: <span class="${teamClass}">${teamName}</span>`;
+        }
+        
+        // ==================== КОПИРОВАНИЕ ССЫЛКИ ====================
         document.getElementById('btnCopyLink').onclick = () => {
             const link = window.location.href;
             navigator.clipboard.writeText(link).then(() => {
-                alert('✅ Ссылка скопирована в буфер!');
+                alert('✅ Ссылка скопирована в буфер!\nОтправьте её друзьям для присоединения.');
+            }).catch(err => {
+                console.error('Ошибка копирования:', err);
+                alert('❌ Не удалось скопировать ссылку');
             });
         };
         
-        // Начинаем подключение
-        connectWebSocket();
+        // ==================== ПЕРЕЗАГРУЗКА ====================
+        document.getElementById('btnRestart').onclick = () => {
+            if (confirm('Создать новую игру в этой же комнате?')) {
+                location.reload();
+            }
+        };
         
-        // Автоматическое переподключение при потере фокуса
+        // ==================== АВТОМАТИЧЕСКОЕ ПОДКЛЮЧЕНИЕ ====================
+        window.addEventListener('load', () => {
+            console.log(`Подключение к комнате: ${roomId}`);
+            console.log(`WebSocket URL: ${wsUrl}`);
+            connectWebSocket();
+        });
+        
+        // Автоматическое переподключение при возвращении на вкладку
         window.addEventListener('focus', () => {
             if (!socket || socket.readyState !== WebSocket.OPEN) {
                 if (reconnectAttempts < maxReconnectAttempts) {
