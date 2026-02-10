@@ -182,7 +182,7 @@ async def websocket_handler(request):
         logger.warning(f"{client_ip}: Отсутствует код комнаты")
         await ws.close(code=1008, message=b'Room ID required')
         return ws
-    
+
     if room_id not in active_games:
         logger.warning(f"{client_ip}: Комната {room_id} не найдена")
         await ws.close(code=1008, message=b'Room not found')
@@ -380,9 +380,12 @@ async def setup_application():
     # Инициализируем приложение
     await app.initialize()
     
-    # НЕ запускаем поллинг, используем вебхуки
-    logger.info("✅ Приложение Telegram бота инициализировано")
-
+    # ЗАПУСКАЕМ ОЧЕРЕДЬ ОБРАБОТКИ ОБНОВЛЕНИЙ - ЭТО КЛЮЧЕВОЕ!
+    await app.start()
+    asyncio.create_task(app.updater.start_polling())  # Запускаем обработку очереди
+    
+    logger.info("✅ Приложение Telegram бота инициализировано и запущено")
+    
 async def main():
     """Основная функция запуска сервера"""
     logger.info("="*60)
