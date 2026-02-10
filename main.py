@@ -4,102 +4,141 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 # --- Настройка логирования ---
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.basicConfig(level=logging.DEBUG) # Добавьте эту строку
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# --- Конфигурация ---
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-RENDER_URL = os.environ.get('RENDER_URL')
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://ваш-ник.github.io')  # Убедитесь, что это ваш URL
-WEBHOOK_PATH = '/telegram'
-WS_PATH = '/ws'
+# --- Конфигурация (ЗАПОЛНИТЬ ПЕРЕМЕННЫЕ В RENDER) ---
+BOT_TOKEN = os.environ.get('BOT_TOKEN', 'ВАШ_ТОКЕН')           # Обязательно!
+RENDER_URL = os.environ.get('RENDER_URL', 'https://ваш-проект.onrender.com')  # Обязательно!
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://raphov.github.io')  # Ваш GitHub Pages
 
 # --- Глобальные хранилища ---
-active_games = {}       # room_id -> game_data
-ws_rooms = {}           # room_id -> [websocket1, websocket2, ...]
+active_games = {}    # room_id -> game_data
+ws_rooms = {}        # room_id -> [websocket1, websocket2, ...]
 
-# --- Игровая логика ---
+# --- Список слов для игры ---
+WORDS = [
+    "яблоко", "гора", "мост", "врач", "луна", "книга", "огонь", "река", "часы",
+    "снег", "глаз", "дом", "змея", "кольцо", "корабль", "лев", "лес", "машина",
+    "медведь", "нос", "океан", "перо", "пила", "поле", "пуля", "работа", "роза",
+    "рука", "сапог", "сок", "стол", "театр", "тень", "фонтан", "хлеб", "школа",
+    "шляпа", "ящик", "игла", "йогурт", "зонт", "ксерокс", "эхо", "юла", "якорь"
+]
+
 def create_game():
-    words = random.sample([
-        "яблоко", "гора", "мост", "врач", "луна", "книга", "огонь", "река", "часы",
-        "снег", "глаз", "дом", "змея", "кольцо", "корабль", "лев", "лес", "машина",
-        "медведь", "нос", "океан", "перо", "пила", "поле", "пуля"
-    ], 25)
+    """Создаёт новую игру со случайными словами и раскладкой"""
+    words = random.sample(WORDS, 25)
     
+    # Распределение карточек: 9 красных, 8 синих, 1 чёрный (убийца), 7 нейтральных
     colors = (['red'] * 9) + (['blue'] * 8) + ['black'] + (['neutral'] * 7)
     random.shuffle(colors)
     
     return {
         'words': words,
         'colors': colors,
-        'opened': [False] * 25,
+        'revealed': [False] * 25,
         'current_team': 'red',
-        'hint': None,
-        'hint_num': None,
-        'guesses_left': 0,
-        'created_at': asyncio.get_event_loop().time()
+        'status': 'waiting',
+        'players': []
     }
 
-# --- Telegram команды ---
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# ==================== КОМАНДЫ TELEGRAM ====================
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /start"""
     await update.message.reply_text(
-        "🎮 **Codenames Bot**\n\n"
-        "Создать комнату: /new\n"
-        "Присоединиться: /join <код>\n\n"
-        "Бот работает в связке с веб-интерфейсом.",
+        "🎮 **Добро пожаловать в Codenames!**\n\n"
+        "Создать новую комнату: /new\n"
+        "Присоединиться к существующей: /join <код_комнаты>\n\n"
+        "Пример: `/join ABC123`",
         parse_mode='Markdown'
     )
 
-async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /new - создаёт комнату"""
+    # Генерируем уникальный код комнаты
     room_id = str(uuid.uuid4())[:6].upper()
-    active_games[room_id] = create_game()
-    ws_rooms[room_id] = []
     
+    # Создаём и сохраняем игру
+    active_games[room_id] = create_game()
+    ws_rooms[room_id] = []  # Пока нет WebSocket-подключений
+    
+    # Формируем ссылку на фронтенд с параметром комнаты
     game_url = f"{FRONTEND_URL}?room={room_id}"
+    
+    # Создаём кнопку для открытия игры
     button = InlineKeyboardButton("▶️ Открыть игровой стол", url=game_url)
     
+    # Отправляем сообщение с кнопкой
     await update.message.reply_text(
-        f"✅ **Комната создана!**\n\n"
-        f"**Код:** `{room_id}`\n"
-        f"**Ссылка:** {game_url}\n\n"
-        f"1. Отправьте код друзьям для /join\n"
-        f"2. Нажмите кнопку ниже чтобы открыть игровой стол",
+        f"✅ **Игровая комната создана!**\n\n"
+        f"**Код комнаты:** `{room_id}`\n"
+        f"**Ссылка для игроков:** {game_url}\n\n"
+        f"1. Отправьте код `{room_id}` друзьям\n"
+        f"2. Нажмите кнопку ниже, чтобы открыть игровое поле",
         reply_markup=InlineKeyboardMarkup([[button]]),
         parse_mode='Markdown'
     )
-    logger.info(f"Создана комната {room_id}")
+    
+    logger.info(f"Создана комната: {room_id}")
 
-async def cmd_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /join - присоединение к комнате"""
     if not context.args:
-        await update.message.reply_text("Укажите код комнаты: /join ABC123")
+        await update.message.reply_text("Укажите код комнаты: `/join ABC123`", parse_mode='Markdown')
         return
     
     room_id = context.args[0].upper()
+    
     if room_id not in active_games:
-        await update.message.reply_text("❌ Комната не найдена или устарела.")
+        await update.message.reply_text("❌ Комната не найдена. Возможно, она устарела.")
         return
     
+    # Формируем ту же ссылку, что и при создании
     game_url = f"{FRONTEND_URL}?room={room_id}"
     button = InlineKeyboardButton("🎮 Присоединиться к игре", url=game_url)
     
     await update.message.reply_text(
         f"🔗 **Присоединение к комнате {room_id}**\n\n"
-        f"Нажмите кнопку ниже:",
+        f"Нажмите кнопку ниже, чтобы открыть игровое поле:",
         reply_markup=InlineKeyboardMarkup([[button]]),
         parse_mode='Markdown'
     )
 
-# --- WebSocket сервер ---
+# ==================== WEBHOOK ОБРАБОТЧИК ====================
+async def telegram_webhook_handler(request):
+    """Принимает обновления от Telegram API"""
+    try:
+        # Парсим JSON из запроса
+        data = await request.json()
+        
+        # Преобразуем в объект Update
+        update = Update.de_json(data, app.bot)
+        
+        # Передаём обновление в очередь обработки
+        await app.update_queue.put(update)
+        
+        # Отвечаем Telegram, что всё получили
+        return web.Response(text="OK", status=200)
+        
+    except Exception as e:
+        logger.error(f"Ошибка в обработчике вебхука: {e}")
+        return web.Response(text="Error", status=500)
+
+# ==================== WEBSOCKET СЕРВЕР ====================
 async def websocket_handler(request):
+    """Обработчик WebSocket соединений от фронтенда"""
     ws = web.WebSocketResponse(autoping=True, heartbeat=30)
     await ws.prepare(request)
     
+    # Получаем код комнаты из параметров запроса
     room_id = request.query.get('room', '').upper()
     client_ip = request.remote
     
-    if not room_id:
-        logger.warning(f"{client_ip}: Отсутствует room_id")
+    if not room_id or room_id == 'NULL' or room_id == 'NULL':
+        logger.warning(f"{client_ip}: Отсутствует код комнаты")
         await ws.close(code=1008, message=b'Room ID required')
         return ws
     
@@ -108,23 +147,26 @@ async def websocket_handler(request):
         await ws.close(code=1008, message=b'Room not found')
         return ws
     
-    # Регистрируем соединение
+    # Регистрируем новое соединение
+    if room_id not in ws_rooms:
+        ws_rooms[room_id] = []
     ws_rooms[room_id].append(ws)
-    logger.info(f"{client_ip}: Подключен к комнате {room_id} (всего: {len(ws_rooms[room_id])})")
+    
+    logger.info(f"{client_ip}: Подключён к комнате {room_id} (всего: {len(ws_rooms[room_id])})")
     
     try:
-        # Отправляем текущее состояние новому игроку
+        # Отправляем текущее состояние игры новому игроку
         game_state = active_games[room_id]
         await ws.send_json({
             'type': 'init',
             'room': room_id,
             'words': game_state['words'],
             'colors': game_state['colors'],
-            'opened': game_state['opened'],
+            'revealed': game_state['revealed'],
             'current_team': game_state['current_team']
         })
         
-        # Оповещаем остальных о новом игроке
+        # Оповещаем остальных игроков о новом участнике
         for other_ws in ws_rooms[room_id]:
             if other_ws != ws and not other_ws.closed:
                 await other_ws.send_json({
@@ -132,7 +174,7 @@ async def websocket_handler(request):
                     'count': len(ws_rooms[room_id])
                 })
         
-        # Обработка сообщений от клиента
+        # Обрабатываем сообщения от клиента
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
                 try:
@@ -141,21 +183,20 @@ async def websocket_handler(request):
                 except json.JSONDecodeError as e:
                     logger.error(f"Ошибка JSON: {e}")
             elif msg.type == web.WSMsgType.ERROR:
-                logger.error(f"WebSocket ошибка: {ws.exception()}")
-                break
+                logger.error(f"Ошибка WebSocket: {ws.exception()}")
                 
     except Exception as e:
-        logger.error(f"Ошибка в обработчике WS: {e}")
+        logger.error(f"Ошибка в обработчике WebSocket: {e}")
     finally:
         # Удаляем соединение при отключении
         if room_id in ws_rooms and ws in ws_rooms[room_id]:
             ws_rooms[room_id].remove(ws)
-            logger.info(f"{client_ip}: Отключен от комнаты {room_id}")
+            logger.info(f"{client_ip}: Отключён от комнаты {room_id}")
             
-            # Если комната пуста более 5 минут - очищаем
+            # Если комната пуста, можно её очистить через некоторое время
             if not ws_rooms[room_id]:
-                del ws_rooms[room_id]
-                logger.info(f"Комната {room_id} удалена (нет подключений)")
+                # Не удаляем сразу, даём шанс переподключиться
+                logger.info(f"Комната {room_id} пуста")
     
     return ws
 
@@ -167,15 +208,17 @@ async def handle_client_message(room_id, data, ws):
     if not game:
         return
     
+    # Игрок кликнул на карточку
     if action == 'click_card':
         idx = data.get('index')
         if idx is None or not 0 <= idx < 25:
             return
         
-        if game['opened'][idx]:
-            return  # Уже открыта
+        if game['revealed'][idx]:
+            return  # Карточка уже открыта
         
-        game['opened'][idx] = True
+        # Открываем карточку
+        game['revealed'][idx] = True
         color = game['colors'][idx]
         
         # Рассылаем обновление всем в комнате
@@ -188,32 +231,61 @@ async def handle_client_message(room_id, data, ws):
                     'current_team': game['current_team']
                 })
         
-        # Проверяем победу
-        await check_victory(room_id, color)
-        
+        # Проверяем условия победы
+        await check_game_over(room_id, color)
+    
+    # Пинг для поддержания соединения
     elif action == 'ping':
         await ws.send_json({'type': 'pong', 'time': asyncio.get_event_loop().time()})
 
-async def check_victory(room_id, last_color):
-    """Упрощённая проверка условий победы"""
+async def check_game_over(room_id, last_color):
+    """Проверка условий завершения игры"""
     game = active_games.get(room_id)
     if not game:
         return
     
+    # Если открыли чёрную карточку (убийцу)
     if last_color == 'black':
         winner = 'blue' if game['current_team'] == 'red' else 'red'
-        await broadcast(room_id, {'type': 'game_over', 'winner': winner, 'reason': 'Убийца!'})
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': winner,
+            'reason': 'Найден убийца!'
+        })
+        # Очищаем комнату
+        if room_id in active_games:
+            del active_games[room_id]
+        if room_id in ws_rooms:
+            del ws_rooms[room_id]
         return
     
-    red_left = sum(1 for i, c in enumerate(game['colors']) 
-                   if c == 'red' and not game['opened'][i])
-    blue_left = sum(1 for i, c in enumerate(game['colors']) 
-                    if c == 'blue' and not game['opened'][i])
+    # Считаем оставшиеся карточки каждой команды
+    red_remaining = sum(1 for i, c in enumerate(game['colors']) 
+                       if c == 'red' and not game['revealed'][i])
+    blue_remaining = sum(1 for i, c in enumerate(game['colors']) 
+                        if c == 'blue' and not game['revealed'][i])
     
-    if red_left == 0:
-        await broadcast(room_id, {'type': 'game_over', 'winner': 'red', 'reason': 'Все агенты!'})
-    elif blue_left == 0:
-        await broadcast(room_id, {'type': 'game_over', 'winner': 'blue', 'reason': 'Все агенты!'})
+    # Если одна из команд открыла все свои карточки
+    if red_remaining == 0:
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': 'red',
+            'reason': 'Все агенты найдены!'
+        })
+        if room_id in active_games:
+            del active_games[room_id]
+        if room_id in ws_rooms:
+            del ws_rooms[room_id]
+    elif blue_remaining == 0:
+        await broadcast(room_id, {
+            'type': 'game_over',
+            'winner': 'blue',
+            'reason': 'Все агенты найдены!'
+        })
+        if room_id in active_games:
+            del active_games[room_id]
+        if room_id in ws_rooms:
+            del ws_rooms[room_id]
 
 async def broadcast(room_id, message):
     """Рассылка сообщения всем в комнате"""
@@ -224,46 +296,53 @@ async def broadcast(room_id, message):
             except:
                 pass
 
-# --- Вебхук обработчик ---
-async def webhook_handler(request):
-    """Принимаем обновления от Telegram"""
-    try:
-        data = await request.json()
-        update = Update.de_json(data, app.bot)
-        await app.update_queue.put(update)
-        return web.Response(text="OK", status=200)
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return web.Response(text="Error", status=500)
-
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 async def health_check(request):
-    """Для проверки работоспособности Render"""
-    return web.Response(text="Codenames Server is running")
+    """Проверка работоспособности сервера"""
+    return web.Response(text="✅ Codenames Server работает!")
 
-# --- Инициализация ---
+# ==================== ИНИЦИАЛИЗАЦИЯ И ЗАПУСК ====================
+# Создаём приложение Telegram-бота
 app = Application.builder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", cmd_start))
-app.add_handler(CommandHandler("new", cmd_new))
-app.add_handler(CommandHandler("join", cmd_join))
+
+# Регистрируем обработчики команд
+app.add_handler(CommandHandler("start", start_command))
+app.add_handler(CommandHandler("new", new_command))
+app.add_handler(CommandHandler("join", join_command))
 
 async def main():
-    logger.info("Запуск Codenames сервера...")
+    """Основная функция запуска сервера"""
+    logger.info("🚀 Запуск Codenames сервера...")
     
-    # Проверка переменных
-    if not BOT_TOKEN or not RENDER_URL:
-        logger.error("❌ Отсутствуют BOT_TOKEN или RENDER_URL")
+    # Проверка обязательных переменных
+    if not BOT_TOKEN or BOT_TOKEN == 'ВАШ_ТОКЕН':
+        logger.error("❌ Ошибка: BOT_TOKEN не задан!")
+        print("\n" + "="*60)
+        print("ВАЖНО: В настройках Render добавьте переменные окружения:")
+        print("1. BOT_TOKEN - токен от @BotFather")
+        print(f"2. RENDER_URL - ваш URL (сейчас: {RENDER_URL})")
+        print(f"3. FRONTEND_URL - ваш GitHub Pages (сейчас: {FRONTEND_URL})")
+        print("="*60 + "\n")
         return
     
-    # Установка вебхука
-    await app.bot.set_webhook(f"{RENDER_URL}{WEBHOOK_PATH}")
-    logger.info(f"Вебхук установлен: {RENDER_URL}{WEBHOOK_PATH}")
+    if not RENDER_URL or 'ваш-проект' in RENDER_URL:
+        logger.error("❌ Ошибка: RENDER_URL не задан правильно!")
+        return
     
-    # Настройка HTTP сервера
+    # Устанавливаем вебхук на корневой URL
+    webhook_url = f"{RENDER_URL}/"
+    await app.bot.set_webhook(webhook_url)
+    logger.info(f"✅ Вебхук установлен: {webhook_url}")
+    
+    # Настраиваем HTTP сервер
     server = web.Application()
-    server.router.add_get(WS_PATH, websocket_handler)
-    server.router.add_post(WEBHOOK_PATH, webhook_handler)
-    server.router.add_get('/', health_check)
     
+    # Регистрируем маршруты:
+    server.router.add_get('/', health_check)               # GET / для проверки
+    server.router.add_post('/', telegram_webhook_handler)  # POST / для вебхука Telegram
+    server.router.add_get('/ws', websocket_handler)        # WebSocket для игры
+    
+    # Запускаем сервер
     runner = web.AppRunner(server)
     await runner.setup()
     
@@ -272,9 +351,17 @@ async def main():
     await site.start()
     
     logger.info(f"✅ Сервер запущен на порту {port}")
-    logger.info(f"   WebSocket: wss://ваш-проект.onrender.com{WS_PATH}")
-    logger.info(f"   Webhook: {RENDER_URL}{WEBHOOK_PATH}")
-    logger.info(f"   Фронтенд: {FRONTEND_URL}")
+    logger.info(f"🌐 WebSocket: wss://ваш-проект.onrender.com/ws")
+    logger.info(f"🤖 Webhook: {webhook_url}")
+    logger.info(f"🎮 Фронтенд: {FRONTEND_URL}")
+    
+    print("\n" + "="*60)
+    print("✅ ВСЁ ГОТОВО! Сервер запущен и работает.")
+    print("="*60)
+    print(f"1. Проверьте бота: напишите /new в Telegram")
+    print(f"2. Нажмите кнопку от бота, чтобы открыть игру")
+    print(f"3. Игра откроется по адресу: {FRONTEND_URL}")
+    print("="*60 + "\n")
     
     # Бесконечная работа
     await asyncio.Future()
@@ -284,3 +371,5 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Сервер остановлен")
+    except Exception as e:
+        logger.error(f"Критическая ошибка: {e}")
