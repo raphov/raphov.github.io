@@ -1554,3 +1554,35 @@ body.landscape .game-header {
         transition-duration: 0.01ms !important;
     }
 }
+
+
+/* Прогресс-бар удержания */
+.hold-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0%;
+    height: 4px;
+    background: linear-gradient(90deg, #fbbf24, #f59e0b);
+    border-radius: 0 0 8px 8px;
+    transition: width 0.1s linear;
+    z-index: 10;
+}
+
+/* Кнопки управления ходом */
+.turn-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.btn-warning {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    border: 2px solid #fbbf24;
+}
+
+.btn-warning:hover {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}

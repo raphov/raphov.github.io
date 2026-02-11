@@ -3,28 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Онлайн версия игры Codenames с поддержкой Telegram бота">
-    <meta name="theme-color" content="#7c3aed">
-    
+    <meta name="description" content="Онлайн версия игры Codenames">
     <title>Codenames Online</title>
     
     <!-- Стили -->
     <link rel="stylesheet" href="style.css">
-    <!-- Иконки FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Шрифт JetBrains Mono для кода комнаты -->
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&display=swap" rel="stylesheet">
     
     <!-- Favicon -->
-    <link rel="apple-touch-icon" sizes="180x180" href="https://img.icons8.com/color/96/000000/spy.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="https://img.icons8.com/color/48/000000/spy.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="https://img.icons8.com/color/32/000000/spy.png">
-    
-    <!-- Open Graph для Telegram -->
-    <meta property="og:title" content="Codenames Online">
-    <meta property="og:description" content="Играйте в Codenames через Telegram бота">
-    <meta property="og:image" content="https://img.icons8.com/color/512/000000/spy.png">
-    <meta property="og:url" content="">
+    <link rel="icon" type="image/png" href="https://img.icons8.com/color/48/000000/spy.png">
 </head>
 <body class="auto-rotate">
     <div class="container">
@@ -72,6 +60,16 @@
                 <div class="hold-hint">
                     <i class="fas fa-hand-point-up"></i> Удерживайте 2 секунды для выбора карточки
                 </div>
+            </div>
+
+            <!-- КНОПКИ УПРАВЛЕНИЯ ХОДОМ -->
+            <div class="turn-controls" id="turnControls" style="display: none; margin-top: 20px;">
+                <button id="btnPassTurn" class="btn-warning" style="background: #f59e0b;">
+                    <i class="fas fa-exchange-alt"></i> Передать ход
+                </button>
+                <button id="btnEndTurn" class="btn-secondary">
+                    <i class="fas fa-flag-checkered"></i> Закончить ход
+                </button>
             </div>
             
             <!-- КНОПКИ УПРАВЛЕНИЯ -->
@@ -249,93 +247,16 @@
         <!-- КОНТЕЙНЕР ДЛЯ ОШИБОК (отображается при отсутствии комнаты) -->
         <div id="errorContainer" class="error-container" style="display: none;"></div>
     </div>
-    
-    <!-- JavaScript -->
-    <script src="script.js"></script>
-    
-    <!-- Скрипт для дополнительных модальных окон -->
-    <script>
-        // Дополнительные обработчики для модальных окон
-        document.addEventListener('DOMContentLoaded', function() {
-            // Модальное окно горячих клавиш
-            const hotkeysModal = document.getElementById('hotkeysModal');
-            const aboutModal = document.getElementById('aboutModal');
-            
-            // Показать горячие клавиши
-            document.getElementById('showHotkeys').addEventListener('click', function() {
-                hotkeysModal.classList.add('show');
-                document.querySelector('.menu-content').style.display = 'none';
-                document.getElementById('menuOverlay').style.display = 'none';
-            });
-            
-            // Показать информацию о проекте
-            document.getElementById('showAbout').addEventListener('click', function() {
-                aboutModal.classList.add('show');
-                document.querySelector('.menu-content').style.display = 'none';
-                document.getElementById('menuOverlay').style.display = 'none';
-            });
-            
-            // Закрытие модальных окон
-            [hotkeysModal, aboutModal].forEach(modal => {
-                modal.querySelector('.modal-close').addEventListener('click', function() {
-                    modal.classList.remove('show');
-                });
-                
-                modal.addEventListener('click', function(e) {
-                    if (e.target === modal) {
-                        modal.classList.remove('show');
-                    }
-                });
-            });
-            
-            // Добавление подсказки о горячих клавишах при первом посещении
-            if (!localStorage.getItem('hotkeys_shown')) {
-                setTimeout(() => {
-                    if (typeof showNotification === 'function') {
-                        showNotification('Нажмите M для открытия меню с горячими клавишами', 'info', 5000);
-                    }
-                    localStorage.setItem('hotkeys_shown', 'true');
-                }, 3000);
-            }
-            
-            // Добавление атрибутов доступности
-            document.querySelectorAll('button').forEach(button => {
-                if (!button.getAttribute('aria-label')) {
-                    const title = button.getAttribute('title');
-                    if (title) {
-                        button.setAttribute('aria-label', title);
-                    }
-                }
-            });
-            
-            // Предотвращение случайного закрытия при игре
-            window.addEventListener('beforeunload', function(e) {
-                const gameArea = document.getElementById('gameArea');
-                if (gameArea && gameArea.style.display !== 'none') {
-                    e.preventDefault();
-                    e.returnValue = 'У вас есть активная игра. Вы уверены, что хотите уйти?';
-                }
-            });
-        });
-    </script>
-    
-    <!-- Yandex.Metrika (опционально, для аналитики) -->
-    <!--
-    <script type="text/javascript" >
-        (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-        m[i].l=1*new Date();
-        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
-        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
-        (window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-        
-        ym(00000000, "init", {
-            clickmap:true,
-            trackLinks:true,
-            accurateTrackBounce:true,
-            webvisor:true
-        });
-    </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/00000000" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    -->
+</div>
+
+    <!-- Подключаем JavaScript модули в правильном порядке -->
+    <script src="js/config.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/websocket.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/mobile.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/main.js"></script>
 </body>
 </html>
