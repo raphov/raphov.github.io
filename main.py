@@ -161,16 +161,20 @@ active_rooms: Dict[str, GameRoom] = {}
 def make_game_link(room_id: str, user_id: int) -> str:
     return f"{FRONTEND_URL}?room={room_id}&user_id={user_id}"
 
+def escape_html(text: str) -> str:
+    """Экранирует спецсимволы для HTML-разметки Telegram"""
+    return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
 
 # ==================== КОМАНДЫ TELEGRAM ====================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 **Codenames Online**\n\n"
-        "`/new` – создать комнату\n"
-        "`/join [код]` – присоединиться\n"
-        "`/list` – список комнат\n"
-        "`/help` – помощь",
-        parse_mode='Markdown'
+        "👋 <b>Codenames Online</b>\n\n"
+        "<code>/new</code> – создать комнату\n"
+        "<code>/join [код]</code> – присоединиться\n"
+        "<code>/list</code> – список комнат\n"
+        "<code>/help</code> – помощь",
+        parse_mode='HTML'
     )
 
 async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,23 +189,29 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🔎 Стать агентом", callback_data=f"role_agent_{room_id}")]
     ]
     await update.message.reply_text(
-        f"🎮 **НОВАЯ КОМНАТА `{room_id}`**\n\n"
-        "**Выберите роль:**\n"
+        f"🎮 <b>НОВАЯ КОМНАТА <code>{room_id}</code></b>\n\n"
+        "<b>Выберите роль:</b>\n"
         "• 👑 Капитан – видит цвета карт\n"
         "• 🔎 Агент – угадывает слова\n\n"
         "👇 Нажмите кнопку ниже, чтобы получить личную ссылку.",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
 
 async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if not context.args:
-        await update.message.reply_text("❓ Укажите код комнаты: `/join ABC123`", parse_mode='Markdown')
+        await update.message.reply_text(
+            "❓ Укажите код комнаты: <code>/join ABC123</code>",
+            parse_mode='HTML'
+        )
         return
     room_id = context.args[0].upper()
     if room_id not in active_rooms:
-        await update.message.reply_text(f"❌ Комната `{room_id}` не найдена", parse_mode='Markdown')
+        await update.message.reply_text(
+            f"❌ Комната <code>{room_id}</code> не найдена",
+            parse_mode='HTML'
+        )
         return
     room = active_rooms[room_id]
 
@@ -209,9 +219,9 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Уже в комнате – сразу ссылка
         link = make_game_link(room_id, user.id)
         await update.message.reply_text(
-            f"✅ Вы уже в комнате `{room_id}`\n\n"
-            f"🎮 **Ваша ссылка:**\n{link}",
-            parse_mode='Markdown'
+            f"✅ Вы уже в комнате <code>{room_id}</code>\n\n"
+            f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
+            parse_mode='HTML'
         )
         return
 
@@ -230,43 +240,46 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard.append([InlineKeyboardButton("🔎 Остаться агентом", callback_data=f"join_agent_{room_id}")])
 
     await update.message.reply_text(
-        f"✅ Вы присоединились к комнате `{room_id}`\n"
-        f"Команда: {player['team']}\n\n"
+        f"✅ Вы присоединились к комнате <code>{room_id}</code>\n"
+        f"Команда: <b>{player['team']}</b>\n\n"
         "Выберите роль или останьтесь агентом:",
         reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
 
 async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not active_rooms:
-        await update.message.reply_text("📭 Нет активных комнат", parse_mode='Markdown')
+        await update.message.reply_text("📭 Нет активных комнат", parse_mode='HTML')
         return
-    text = "📋 **Активные комнаты:**\n"
+    text = "📋 <b>Активные комнаты:</b>\n"
     for rid, room in list(active_rooms.items()):
         if room.is_active():
             age = (datetime.now() - room.created_at).seconds // 60
-            text += f"• `{rid}` – {len(room.players)} игр., {age} мин.\n"
-    await update.message.reply_text(text, parse_mode='Markdown')
+            text += f"• <code>{rid}</code> – {len(room.players)} игр., {age} мин.\n"
+    await update.message.reply_text(text, parse_mode='HTML')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🛠 **Команды:**\n"
-        "`/new` – создать комнату\n"
-        "`/join [код]` – присоединиться\n"
-        "`/list` – список комнат\n\n"
-        "**Как играть:**\n"
+        "🛠 <b>Команды:</b>\n"
+        "<code>/new</code> – создать комнату\n"
+        "<code>/join [код]</code> – присоединиться\n"
+        "<code>/list</code> – список комнат\n\n"
+        "<b>Как играть:</b>\n"
         "1. Создайте комнату\n"
         "2. Выберите роль (кнопки)\n"
         "3. Получите персональную ссылку\n"
-        "4. Пригласите друзей через `/join`\n"
+        "4. Пригласите друзей через /join\n"
         "5. Играйте!\n\n"
-        "👑 Капитаны видят цвета карт сразу.\n"
-        "🔎 Агенты угадывают вслепую.",
-        parse_mode='Markdown'
+        "👑 <b>Капитаны</b> видят цвета карт сразу.\n"
+        "🔎 <b>Агенты</b> угадывают вслепую.",
+        parse_mode='HTML'
     )
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❓ Неизвестная команда. /help")
+    await update.message.reply_text(
+        "❓ Неизвестная команда. /help",
+        parse_mode='HTML'
+    )
 
 
 # ==================== CALLBACK-КНОПКИ ====================
@@ -277,18 +290,18 @@ async def role_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     parts = data.split('_')
     if len(parts) != 3 or not data.startswith('role_'):
-        await query.edit_message_text("❌ Ошибка запроса")
+        await query.edit_message_text("❌ Ошибка запроса", parse_mode='HTML')
         return
     role_type, room_id = parts[1], parts[2]
     if room_id not in active_rooms:
-        await query.edit_message_text("❌ Комната устарела или не существует")
+        await query.edit_message_text("❌ Комната устарела или не существует", parse_mode='HTML')
         return
     room = active_rooms[room_id]
 
     if role_type == 'captain':
         team = 'red' if room.captains['red'] is None else 'blue'
         if room.captains[team] is not None:
-            await query.edit_message_text(f"❌ Команда {team} уже занята")
+            await query.edit_message_text(f"❌ Команда {team} уже занята", parse_mode='HTML')
             return
         # Добавляем игрока и назначаем капитаном
         if user.id not in room.players:
@@ -296,9 +309,9 @@ async def role_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         room.set_captain(team, user.id)
         link = make_game_link(room_id, user.id)
         await query.edit_message_text(
-            f"✅ **Вы капитан команды {team.upper()}!**\n\n"
-            f"🎮 **Ваша ссылка для игры:**\n{link}",
-            parse_mode='Markdown'
+            f"✅ <b>Вы капитан команды {team.upper()}!</b>\n\n"
+            f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
+            parse_mode='HTML'
         )
     else:  # agent
         if user.id not in room.players:
@@ -308,9 +321,9 @@ async def role_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player['role'] = 'agent'
         link = make_game_link(room_id, user.id)
         await query.edit_message_text(
-            f"✅ **Вы агент команды {player['team']}**\n\n"
-            f"🎮 **Ваша ссылка для игры:**\n{link}",
-            parse_mode='Markdown'
+            f"✅ <b>Вы агент команды {player['team']}</b>\n\n"
+            f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
+            parse_mode='HTML'
         )
 
 async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -320,37 +333,37 @@ async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     parts = data.split('_')
     if len(parts) < 3:
-        await query.edit_message_text("❌ Ошибка запроса")
+        await query.edit_message_text("❌ Ошибка запроса", parse_mode='HTML')
         return
     role_type = parts[1]
     room_id = parts[-1]
     if room_id not in active_rooms:
-        await query.edit_message_text("❌ Комната не найдена")
+        await query.edit_message_text("❌ Комната не найдена", parse_mode='HTML')
         return
     room = active_rooms[room_id]
 
     if role_type == 'captain':
         team = parts[2]
         if room.captains[team] is not None:
-            await query.edit_message_text(f"❌ Капитан {team} уже есть")
+            await query.edit_message_text(f"❌ Капитан {team} уже есть", parse_mode='HTML')
             return
         if user.id not in room.players:
             room.add_player(user.id, user.username or user.first_name, role='captain')
         room.set_captain(team, user.id)
         link = make_game_link(room_id, user.id)
         await query.edit_message_text(
-            f"✅ **Вы капитан команды {team.upper()}!**\n\n"
-            f"🎮 **Ваша ссылка:**\n{link}",
-            parse_mode='Markdown'
+            f"✅ <b>Вы капитан команды {team.upper()}!</b>\n\n"
+            f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
+            parse_mode='HTML'
         )
     else:  # agent
         if user.id not in room.players:
             room.add_player(user.id, user.username or user.first_name, role='agent')
         link = make_game_link(room_id, user.id)
         await query.edit_message_text(
-            f"✅ **Вы агент команды {room.players[user.id]['team']}**\n\n"
-            f"🎮 **Ваша ссылка:**\n{link}",
-            parse_mode='Markdown'
+            f"✅ <b>Вы агент команды {room.players[user.id]['team']}</b>\n\n"
+            f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
+            parse_mode='HTML'
         )
 
 
