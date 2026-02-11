@@ -12,7 +12,7 @@ from typing import Dict, List
 
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ==================== НАСТРОЙКА ====================
 logging.basicConfig(
@@ -36,7 +36,7 @@ class GameRoom:
         self.room_id = room_id
         self.created_at = datetime.now()
         self.game_state = self._create_game_state()
-        self.captain_links_used = set()  # просто для статистики, не блокируем
+        self.ws_connections = []
 
     def _create_game_state(self) -> Dict:
         words = self._load_words()
@@ -62,20 +62,17 @@ class GameRoom:
             return ["яблоко", "гора", "мост", "врач", "луна", "книга", "огонь", "река", "часы"]
 
     def get_captain_state(self) -> Dict:
-        """Для капитана - со всеми цветами"""
         state = self.get_public_state()
         state['colors'] = self.game_state['colors']
         state['role'] = 'captain'
         return state
 
     def get_agent_state(self) -> Dict:
-        """Для агента - без цветов"""
         state = self.get_public_state()
         state['role'] = 'agent'
         return state
 
     def get_public_state(self) -> Dict:
-        """Общая часть состояния"""
         return {
             'room_id': self.room_id,
             'words': self.game_state['words'],
@@ -130,8 +127,10 @@ class GameRoom:
         return datetime.now() - self.created_at < timedelta(hours=24)
 
     def cleanup(self):
-        # WebSocket соединения хранятся отдельно, очистим их
-        pass
+        for ws in self.ws_connections:
+            if not ws.closed:
+                asyncio.create_task(ws.close())
+        self.ws_connections.clear()
 
 
 active_rooms: Dict[str, GameRoom] = {}
@@ -139,16 +138,14 @@ active_rooms: Dict[str, GameRoom] = {}
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ====================
 def make_captain_link(room_id: str) -> str:
-    """Ссылка для капитана - видит все цвета"""
     return f"{FRONTEND_URL}?room={room_id}&role=captain"
 
 def make_agent_link(room_id: str) -> str:
-    """Ссылка для агента - видит только слова"""
     return f"{FRONTEND_URL}?room={room_id}&role=agent"
 
 
 # ==================== КОМАНДЫ TELEGRAM ====================
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_command(update: Update, context):
     await update.message.reply_text(
         "👋 <b>Codenames Online</b>\n\n"
         "<code>/new</code> – создать комнату\n"
@@ -158,7 +155,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
-async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def new_command(update: Update, context):
     user = update.effective_user
     room_id = str(uuid.uuid4())[:6].upper()
     room = GameRoom(room_id)
@@ -176,13 +173,13 @@ async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🎮 <b>КОМНАТА {room_id} СОЗДАНА!</b>\n\n"
         f"<b>👑 Капитан:</b> видит все цвета карточек\n"
-        f"<b>🔎 Агент:</b> видит только слова, цвета открываются после клика\n\n"
+        f"<b>🔎 Агент:</b> видит только слова\n\n"
         f"👇 <b>Отправьте друзьям нужные ссылки:</b>",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='HTML'
     )
 
-async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def join_command(update: Update, context):
     if not context.args:
         await update.message.reply_text(
             "❓ Укажите код комнаты: <code>/join ABC123</code>",
@@ -213,7 +210,7 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
-async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def list_command(update: Update, context):
     if not active_rooms:
         await update.message.reply_text("📭 Нет активных комнат", parse_mode='HTML')
         return
@@ -222,25 +219,24 @@ async def list_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for rid, room in list(active_rooms.items()):
         if room.is_active():
             age = (datetime.now() - room.created_at).seconds // 60
-            text += f"• <code>{rid}</code> – создана {age} мин. назад\n"
+            text += f"• <code>{rid}</code> – {age} мин.\n"
     await update.message.reply_text(text, parse_mode='HTML')
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(update: Update, context):
     await update.message.reply_text(
         "🛠 <b>Команды:</b>\n"
-        "<code>/new</code> – создать комнату (даёт 2 ссылки)\n"
-        "<code>/join [код]</code> – присоединиться к комнате\n"
-        "<code>/list</code> – список активных комнат\n\n"
+        "<code>/new</code> – создать комнату\n"
+        "<code>/join [код]</code> – присоединиться\n"
+        "<code>/list</code> – список комнат\n\n"
         "<b>Как играть:</b>\n"
-        "1. Создайте комнату (/new)\n"
+        "1. Создайте комнату\n"
         "2. Отправьте друзьям нужные ссылки\n"
-        "3. Капитаны видят ВСЕ цвета сразу\n"
-        "4. Агенты угадывают вслепую\n"
-        "5. Удерживайте карточку 1.5 сек для выбора",
+        "3. Капитаны видят ВСЕ цвета\n"
+        "4. Агенты угадывают вслепую",
         parse_mode='HTML'
     )
 
-async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def unknown_command(update: Update, context):
     await update.message.reply_text(
         "❓ Неизвестная команда. /help",
         parse_mode='HTML'
@@ -249,28 +245,15 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== WEBSOCKET ====================
 async def websocket_handler(request):
-    """WebSocket обработчик - БЕЗ user_id, только по комнате и роли"""
+    """WebSocket обработчик"""
     
-    # Разрешаем CORS
-    if request.method == "OPTIONS":
-        return web.Response(headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type",
-        })
-
     ws = web.WebSocketResponse(autoping=True, heartbeat=30)
-    
-    try:
-        await ws.prepare(request)
-    except Exception as e:
-        logger.error(f"❌ Ошибка подготовки WebSocket: {e}")
-        return web.Response(status=500, text="WebSocket preparation failed")
+    await ws.prepare(request)
 
     room_id = request.query.get('room', '').upper()
-    role = request.query.get('role', 'agent')  # captain или agent
+    role = request.query.get('role', 'agent')
     
-    logger.info(f"🔌 WebSocket: комната={room_id}, роль={role}, origin={request.headers.get('Origin', 'unknown')}")
+    logger.info(f"🔌 WebSocket: комната={room_id}, роль={role}")
 
     if not room_id:
         await ws.close(code=1008, message=b'Room ID required')
@@ -282,16 +265,12 @@ async def websocket_handler(request):
         return ws
 
     room = active_rooms[room_id]
-    
-    # Сохраняем соединение для рассылки
-    if not hasattr(room, 'ws_connections'):
-        room.ws_connections = []
     room.ws_connections.append(ws)
     
-    logger.info(f"✅ WebSocket подключен: комната {room_id}, роль {role}, всего соединений: {len(room.ws_connections)}")
+    logger.info(f"✅ WebSocket подключен: комната {room_id}, всего: {len(room.ws_connections)}")
 
     try:
-        # Отправляем начальное состояние в зависимости от роли
+        # Отправляем начальное состояние
         if role == 'captain':
             game_state = room.get_captain_state()
         else:
@@ -302,7 +281,6 @@ async def websocket_handler(request):
             'game_state': game_state
         })
 
-        # Обрабатываем сообщения
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
                 try:
@@ -317,61 +295,37 @@ async def websocket_handler(request):
                             if 'error' in result:
                                 await ws.send_json({'type': 'error', 'message': result['error']})
                             else:
-                                # Рассылаем обновление ВСЕМ в комнате
-                                update_msg = {
-                                    'type': 'card_revealed',
-                                    'index': result['index'],
-                                    'color': result['color']
-                                }
-                                
+                                # Рассылаем всем
                                 for conn in room.ws_connections:
                                     if not conn.closed:
-                                        await conn.send_json(update_msg)
+                                        await conn.send_json({
+                                            'type': 'card_revealed',
+                                            'index': result['index'],
+                                            'color': result['color']
+                                        })
                                 
-                                # Проверяем конец игры
                                 if result['game_over']:
-                                    game_over_msg = {
-                                        'type': 'game_over',
-                                        'winner': result['winner']
-                                    }
                                     for conn in room.ws_connections:
                                         if not conn.closed:
-                                            await conn.send_json(game_over_msg)
+                                            await conn.send_json({
+                                                'type': 'game_over',
+                                                'winner': result['winner']
+                                            })
                                 
-                                # Переключаем команду при необходимости
                                 elif result['color'] not in [room.game_state['current_team'], 'neutral', 'black']:
                                     room.switch_team()
-                                    turn_msg = {
-                                        'type': 'turn_switch',
-                                        'current_team': room.game_state['current_team'],
-                                        'current_turn': room.game_state['current_turn']
-                                    }
                                     for conn in room.ws_connections:
                                         if not conn.closed:
-                                            await conn.send_json(turn_msg)
-                    
-                    elif action == 'get_state':
-                        if role == 'captain':
-                            await ws.send_json({
-                                'type': 'state_update',
-                                'game_state': room.get_captain_state()
-                            })
-                        else:
-                            await ws.send_json({
-                                'type': 'state_update',
-                                'game_state': room.get_agent_state()
-                            })
+                                            await conn.send_json({
+                                                'type': 'turn_switch',
+                                                'current_team': room.game_state['current_team']
+                                            })
                     
                     elif action == 'ping':
                         await ws.send_json({'type': 'pong'})
                         
                 except json.JSONDecodeError:
                     logger.error(f"❌ JSON ошибка")
-                except Exception as e:
-                    logger.error(f"❌ Ошибка обработки: {e}")
-            
-            elif msg.type == web.WSMsgType.ERROR:
-                logger.error(f"❌ WebSocket ошибка: {ws.exception()}")
 
     except Exception as e:
         logger.error(f"❌ WebSocket ошибка: {e}")
@@ -389,7 +343,7 @@ async def telegram_webhook(request):
     try:
         data = await request.json()
         update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
+        await application.process_update(update)
         return web.Response(text='OK')
     except Exception as e:
         logger.error(f"❌ Webhook error: {e}")
@@ -397,11 +351,7 @@ async def telegram_webhook(request):
 
 async def health_check(request):
     """Проверка работоспособности"""
-    total_connections = 0
-    for room in active_rooms.values():
-        if hasattr(room, 'ws_connections'):
-            total_connections += len(room.ws_connections)
-    
+    total_connections = sum(len(r.ws_connections) for r in active_rooms.values())
     return web.json_response({
         'status': 'ok',
         'rooms': len(active_rooms),
@@ -410,24 +360,22 @@ async def health_check(request):
     })
 
 async def debug_rooms(request):
-    """Отладка - список комнат"""
+    """Отладка"""
     rooms_info = []
     for rid, room in active_rooms.items():
         rooms_info.append({
             'room_id': rid,
-            'connections': len(getattr(room, 'ws_connections', [])),
+            'connections': len(room.ws_connections),
             'red_score': room.game_state['red_score'],
             'blue_score': room.game_state['blue_score'],
             'revealed': sum(room.game_state['revealed']),
-            'created': room.created_at.isoformat(),
             'active': room.is_active()
         })
     return web.json_response(rooms_info)
 
 async def cors_handler(request):
-    """CORS для предварительных запросов"""
+    """CORS"""
     return web.Response(
-        status=200,
         headers={
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -438,30 +386,26 @@ async def cors_handler(request):
 
 # ==================== ОЧИСТКА ====================
 async def cleanup_old_rooms():
-    """Периодическая очистка старых комнат"""
     while True:
         await asyncio.sleep(300)
         to_remove = []
         for rid, room in active_rooms.items():
             if not room.is_active():
-                if hasattr(room, 'ws_connections'):
-                    for ws in room.ws_connections:
-                        if not ws.closed:
-                            await ws.close()
+                room.cleanup()
                 to_remove.append(rid)
         
         for rid in to_remove:
             del active_rooms[rid]
         
         if to_remove:
-            logger.info(f"🧹 Очищено {len(to_remove)} устаревших комнат")
+            logger.info(f"🧹 Очищено {len(to_remove)} комнат")
 
 
 # ==================== ЗАПУСК ====================
 application = Application.builder().token(BOT_TOKEN).build()
 
 async def main():
-    # Регистрируем обработчики команд
+    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("new", new_command))
     application.add_handler(CommandHandler("join", join_command))
@@ -472,23 +416,15 @@ async def main():
     await application.initialize()
     await application.start()
 
-    # Устанавливаем вебхук
+    # Вебхук
     webhook_url = f"{RENDER_URL}/telegram"
     await application.bot.set_webhook(webhook_url)
-    logger.info(f"✅ Вебхук установлен: {webhook_url}")
+    logger.info(f"✅ Вебхук: {webhook_url}")
 
-    # Создаем aiohttp сервер
+    # HTTP сервер - БЕЗ MIDDLEWARE!
     server = web.Application()
     
-    # CORS middleware
-    async def cors_middleware(request, handler):
-        response = await handler(request)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        return response
-    
-    server.middlewares.append(cors_middleware)
-    
-    # Регистрируем маршруты
+    # Простые маршруты
     server.router.add_get('/', health_check)
     server.router.add_get('/health', health_check)
     server.router.add_get('/debug', debug_rooms)
@@ -496,18 +432,18 @@ async def main():
     server.router.add_get('/ws', websocket_handler)
     server.router.add_options('/{tail:.*}', cors_handler)
 
-    # Запускаем сервер
+    # Запуск
     runner = web.AppRunner(server)
     await runner.setup()
     port = int(os.environ.get('PORT', 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-    # Запускаем очистку
+    # Очистка
     asyncio.create_task(cleanup_old_rooms())
 
-    logger.info(f"🚀 Сервер запущен на порту {port}")
-    logger.info(f"🔌 WebSocket: {RENDER_URL.replace('https://', '')}/ws?room=КОМНАТА&role=РОЛЬ")
+    logger.info(f"🚀 Сервер на порту {port}")
+    logger.info(f"🔌 WebSocket: /ws?room=XXX&role=XXX")
     
     await asyncio.Future()
 
@@ -515,6 +451,6 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("🛑 Остановка по Ctrl+C")
+        logger.info("🛑 Остановка")
     except Exception as e:
-        logger.exception("❌ Критическая ошибка")
+        logger.exception("❌ Ошибка")
