@@ -1,11 +1,16 @@
 """Обработчики команд Telegram бота"""
-
 import uuid
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from game.room import GameRoom
-from telegram.keyboard import create_role_keyboard
+
+from game.room import active_rooms, GameRoom
+from utils.links import make_game_link
 from utils.config import FRONTEND_URL
+
+logger = logging.getLogger(__name__)
+
+
 
 # Глобальное хранилище (будет в main.py)
 active_rooms = {}

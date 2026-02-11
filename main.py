@@ -6,11 +6,11 @@ from aiohttp import web
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 
-# Импорты из наших модулей
+# Импорты из наших модулей - ИСПРАВЛЕНО!
 from utils.config import BOT_TOKEN, RENDER_URL
 from game.room import active_rooms
-from telegram.commands import *
-from telegram.callbacks import *
+from tg_bot.commands import *      # ← было telegram, стало tg_bot
+from tg_bot.callbacks import *     # ← было telegram, стало tg_bot
 from websocket.handler import websocket_handler
 
 # Настройка логирования

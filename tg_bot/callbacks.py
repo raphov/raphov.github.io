@@ -1,9 +1,13 @@
 """Обработчики callback-кнопок Telegram"""
 
+import logging
 from telegram import Update
 from telegram.ext import ContextTypes
-from game.room import GameRoom
-from utils.config import FRONTEND_URL
+
+from game.room import active_rooms
+from utils.links import make_game_link
+
+logger = logging.getLogger(__name__)
 
 # Глобальное хранилище (будет в main.py)
 active_rooms = {}
