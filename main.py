@@ -13,7 +13,6 @@ from typing import Dict, List
 from aiohttp import web
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from telegram.error import InvalidToken
 
 # ==================== НАСТРОЙКА ====================
 logging.basicConfig(
@@ -162,7 +161,6 @@ def make_game_link(room_id: str, user_id: int) -> str:
     return f"{FRONTEND_URL}?room={room_id}&user_id={user_id}"
 
 def escape_html(text: str) -> str:
-    """Экранирует спецсимволы для HTML-разметки Telegram"""
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
@@ -216,7 +214,6 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     room = active_rooms[room_id]
 
     if user.id in room.players:
-        # Уже в комнате – сразу ссылка
         link = make_game_link(room_id, user.id)
         await update.message.reply_text(
             f"✅ Вы уже в комнате <code>{room_id}</code>\n\n"
@@ -225,10 +222,8 @@ async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Добавляем как агента (временная роль)
     player = room.add_player(user.id, user.username or user.first_name, role='agent')
 
-    # Кнопки для выбора капитана, если есть места
     keyboard = []
     captain_btns = []
     if room.captains['red'] is None:
@@ -303,7 +298,6 @@ async def role_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if room.captains[team] is not None:
             await query.edit_message_text(f"❌ Команда {team} уже занята", parse_mode='HTML')
             return
-        # Добавляем игрока и назначаем капитаном
         if user.id not in room.players:
             room.add_player(user.id, user.username or user.first_name, role='captain')
         room.set_captain(team, user.id)
@@ -313,7 +307,7 @@ async def role_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
             parse_mode='HTML'
         )
-    else:  # agent
+    else:
         if user.id not in room.players:
             player = room.add_player(user.id, user.username or user.first_name, role='agent')
         else:
@@ -356,7 +350,7 @@ async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🎮 <b>Ваша ссылка для игры:</b>\n{link}",
             parse_mode='HTML'
         )
-    else:  # agent
+    else:
         if user.id not in room.players:
             room.add_player(user.id, user.username or user.first_name, role='agent')
         link = make_game_link(room_id, user.id)
@@ -369,149 +363,143 @@ async def join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== WEBSOCKET ====================
 async def websocket_handler(request):
-    ws = web.WebSocketResponse()
-    await ws.prepare(request)
+    """WebSocket обработчик с поддержкой CORS и дебагом"""
+    # Разрешаем CORS
+    if request.method == "OPTIONS":
+        return web.Response(headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+        })
+
+    ws = web.WebSocketResponse(
+        autoping=True,
+        heartbeat=30,
+        max_msg_size=1024 * 1024  # 1MB
+    )
+    
+    # Пытаемся подготовить WebSocket
+    try:
+        await ws.prepare(request)
+    except Exception as e:
+        logger.error(f"❌ Ошибка подготовки WebSocket: {e}")
+        return web.Response(status=500, text="WebSocket preparation failed")
 
     room_id = request.query.get('room', '').upper()
     user_id = request.query.get('user_id')
+    
+    logger.info(f"🔌 WebSocket подключение: room={room_id}, user_id={user_id}, origin={request.headers.get('Origin', 'unknown')}")
+
+    # Валидация параметров
     if not room_id or not user_id:
+        logger.error("❌ Нет room_id или user_id")
         await ws.close(code=1008, message=b'Need room and user_id')
         return ws
+    
     try:
         uid = int(user_id)
     except ValueError:
+        logger.error(f"❌ Неверный user_id: {user_id}")
         await ws.close(code=1008, message=b'Invalid user_id')
         return ws
 
     if room_id not in active_rooms:
+        logger.error(f"❌ Комната {room_id} не найдена")
         await ws.close(code=1008, message=b'Room not found')
         return ws
+    
     room = active_rooms[room_id]
+    
     if uid not in room.players:
+        logger.error(f"❌ Пользователь {uid} не в комнате {room_id}")
         await ws.close(code=1008, message=b'User not in room')
         return ws
 
+    # Регистрируем соединение
     room.ws_connections.append(ws)
+    logger.info(f"✅ WebSocket подключен: комната {room_id}, пользователь {uid}, всего соединений: {len(room.ws_connections)}")
+
     try:
         # Отправляем начальное состояние
+        game_state = room.get_game_state_for_player(uid)
         await ws.send_json({
             'type': 'init',
-            'game_state': room.get_game_state_for_player(uid)
+            'game_state': game_state
         })
+        logger.info(f"📤 Отправлено init состояние для user {uid}")
 
+        # Обрабатываем сообщения
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
-                data = json.loads(msg.data)
-                action = data.get('action')
-                if action == 'click_card':
-                    index = data.get('index')
-                    result = room.reveal_card(index, uid)
-                    if 'error' in result:
-                        await ws.send_json({'type': 'error', 'message': result['error']})
-                    else:
-                        # Оповещаем всех в комнате
-                        for conn in room.ws_connections:
-                            if not conn.closed:
-                                await conn.send_json({
+                try:
+                    data = json.loads(msg.data)
+                    action = data.get('action')
+                    logger.info(f"📨 Получено сообщение: {action} от user {uid}")
+                    
+                    if action == 'click_card':
+                        index = data.get('index')
+                        if index is not None:
+                            result = room.reveal_card(index, uid)
+                            if 'error' in result:
+                                await ws.send_json({'type': 'error', 'message': result['error']})
+                            else:
+                                # Отправляем обновление всем в комнате
+                                update_msg = {
                                     'type': 'card_revealed',
                                     'index': result['index'],
                                     'color': result['color']
-                                })
-                        if result['game_over']:
-                            for conn in room.ws_connections:
-                                if not conn.closed:
-                                    await conn.send_json({
+                                }
+                                for conn in room.ws_connections:
+                                    if not conn.closed:
+                                        await conn.send_json(update_msg)
+                                
+                                if result['game_over']:
+                                    game_over_msg = {
                                         'type': 'game_over',
                                         'winner': result['winner']
-                                    })
-                elif action == 'get_state':
-                    await ws.send_json({
-                        'type': 'state_update',
-                        'game_state': room.get_game_state_for_player(uid)
-                    })
+                                    }
+                                    for conn in room.ws_connections:
+                                        if not conn.closed:
+                                            await conn.send_json(game_over_msg)
+                                
+                                # Переключаем команду если нужно
+                                if not result['game_over'] and result['color'] not in [room.game_state['current_team'], 'neutral', 'black']:
+                                    room.switch_team()
+                                    turn_msg = {
+                                        'type': 'turn_switch',
+                                        'current_team': room.game_state['current_team'],
+                                        'current_turn': room.game_state['current_turn']
+                                    }
+                                    for conn in room.ws_connections:
+                                        if not conn.closed:
+                                            await conn.send_json(turn_msg)
+                    
+                    elif action == 'get_state':
+                        await ws.send_json({
+                            'type': 'state_update',
+                            'game_state': room.get_game_state_for_player(uid)
+                        })
+                    
+                    elif action == 'ping':
+                        await ws.send_json({'type': 'pong'})
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON ошибка: {e}")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка обработки сообщения: {e}")
+            
+            elif msg.type == web.WSMsgType.ERROR:
+                logger.error(f"❌ WebSocket ошибка: {ws.exception()}")
+
     except Exception as e:
-        logger.error(f"WS error: {e}")
+        logger.error(f"❌ WebSocket ошибка: {e}")
     finally:
+        # Удаляем соединение
         if ws in room.ws_connections:
             room.ws_connections.remove(ws)
+            logger.info(f"🔌 WebSocket отключен: комната {room_id}, пользователь {uid}, осталось: {len(room.ws_connections)}")
+    
     return ws
 
 
-# ==================== ВЕБХУК TELEGRAM ====================
-async def telegram_webhook(request):
-    try:
-        data = await request.json()
-        update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
-        return web.Response(text='OK')
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return web.Response(text='Error', status=500)
-
-
-async def health_check(request):
-    return web.Response(text=f"Codenames OK | Rooms: {len(active_rooms)}")
-
-
-# ==================== ОЧИСТКА СТАРЫХ КОМНАТ ====================
-async def cleanup_old_rooms():
-    while True:
-        await asyncio.sleep(300)
-        to_remove = []
-        for rid, room in active_rooms.items():
-            if not room.is_active():
-                room.cleanup()
-                to_remove.append(rid)
-        for rid in to_remove:
-            del active_rooms[rid]
-        if to_remove:
-            logger.info(f"Очищено {len(to_remove)} устаревших комнат")
-
-
-# ==================== ЗАПУСК ====================
-application = Application.builder().token(BOT_TOKEN).build()
-
-async def main():
-    # Регистрируем обработчики
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("new", new_command))
-    application.add_handler(CommandHandler("join", join_command))
-    application.add_handler(CommandHandler("list", list_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(role_callback, pattern="^role_"))
-    application.add_handler(CallbackQueryHandler(join_callback, pattern="^join_"))
-    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-    await application.initialize()
-    await application.start()
-
-    # Устанавливаем вебхук (polling НЕ ИСПОЛЬЗУЕМ)
-    webhook_url = f"{RENDER_URL}/telegram"
-    await application.bot.set_webhook(webhook_url)
-    logger.info(f"✅ Вебхук установлен: {webhook_url}")
-
-    # Запускаем aiohttp сервер
-    server = web.Application()
-    server.router.add_get('/', health_check)
-    server.router.add_post('/telegram', telegram_webhook)
-    server.router.add_get('/ws', websocket_handler)
-
-    runner = web.AppRunner(server)
-    await runner.setup()
-    port = int(os.environ.get('PORT', 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-
-    # Задача очистки
-    asyncio.create_task(cleanup_old_rooms())
-
-    logger.info(f"🚀 Сервер запущен на порту {port}")
-    await asyncio.Future()  # работаем вечно
-
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Остановка по Ctrl+C")
-    except Exception as e:
-        logger.exception("Критическая ошибка")
+# ===========
