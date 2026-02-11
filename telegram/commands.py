@@ -37,83 +37,69 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     await update.message.reply_text(welcome_text, parse_mode='Markdown')
 
-async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Создание новой комнаты"""
+async def new_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    
-    # Генерируем код комнаты
     room_id = str(uuid.uuid4())[:6].upper()
-    
-    # Создаём комнату
     room = GameRoom(room_id)
     active_rooms[room_id] = room
-    
-    # Клавиатура для выбора роли
-    keyboard = create_role_keyboard(room_id, is_new=True)
-    
-    message = await update.message.reply_text(
-        f"🎮 **НОВАЯ ИГРОВАЯ КОМНАТА СОЗДАНА!**\n\n"
-        f"**Код комнаты:** `{room_id}`\n"
-        f"**Ссылка для всех:** {FRONTEND_URL}?room={room_id}\n\n"
-        f"**Выберите свою роль:**\n"
-        f"• 👑 **Капитан** - видит ВСЕ цвета карточек в игре\n"
-        f"• 🔎 **Агент** - видит только слова, цвета открываются после клика\n\n"
-        f"📋 **Что делать дальше:**\n"
-        f"1. Пригласите друзей: `/join {room_id}`\n"
-        f"2. Выберите роль кнопками ниже\n"
-        f"3. Перейдите по ссылке для начала игры",
+
+    keyboard = [
+        [InlineKeyboardButton("👑 Капитан", callback_data=f"role_captain_{room_id}"),
+         InlineKeyboardButton("🔎 Агент", callback_data=f"role_agent_{room_id}")]
+    ]
+
+    await update.message.reply_text(
+        f"🎮 **НОВАЯ КОМНАТА**\n\n"
+        f"**Код:** `{room_id}`\n\n"
+        f"Выберите роль:\n"
+        f"• 👑 Капитан – видит все цвета в игре\n"
+        f"• 🔎 Агент – угадывает вслепую\n\n"
+        f"📌 После выбора вы получите личную ссылку.",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
 
-async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Присоединение к существующей комнате"""
+async def join_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    
     if not context.args:
-        await update.message.reply_text(
-            "🎮 **Присоединиться к игре**\n\n"
-            "Укажите код комнаты:\n"
-            "`/join ABC123`\n\n"
-            "Или создайте свою комнату:\n"
-            "`/new`",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text("Укажите код: `/join ABC123`", parse_mode='Markdown')
         return
-    
+
     room_id = context.args[0].upper()
-    
     if room_id not in active_rooms:
-        await update.message.reply_text(
-            f"❌ **Комната `{room_id}` не найдена!**\n\n"
-            "Возможные причины:\n"
-            "• Комната устарела (живёт 24 часа)\n"
-            "• Неправильный код\n"
-            "• Комната ещё не создана\n\n"
-            "Создайте новую комнату: `/new`",
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(f"❌ Комната `{room_id}` не найдена", parse_mode='Markdown')
         return
-    
+
     room = active_rooms[room_id]
-    
-    # Проверяем, не присоединялся ли уже пользователь
+
+    # Если уже в комнате → сразу ссылка
     if user.id in room.players:
+        link = make_game_link(room_id, user.id)
         await update.message.reply_text(
-            f"✅ **Вы уже в комнате `{room_id}`!**\n\n"
-            f"🎮 Ссылка на игру: {FRONTEND_URL}?room={room_id}",
+            f"✅ Вы уже в комнате `{room_id}`\n\n"
+            f"🎮 **Ваша ссылка:**\n{link}",
             parse_mode='Markdown'
         )
         return
-    
-    # Создаём кнопки для выбора роли
-    keyboard = create_role_keyboard(room_id, is_new=False, room=room)
-    
+
+    # Добавляем как агента по умолчанию
+    room.add_player(user.id, user.username or user.first_name, role='agent')
+
+    # Кнопки, если есть свободные капитаны
+    keyboard = []
+    captain_buttons = []
+    if room.captains['red'] is None:
+        captain_buttons.append(InlineKeyboardButton("👑 Капитан красных", callback_data=f"join_captain_red_{room_id}"))
+    if room.captains['blue'] is None:
+        captain_buttons.append(InlineKeyboardButton("👑 Капитан синих", callback_data=f"join_captain_blue_{room_id}"))
+    if captain_buttons:
+        keyboard.append(captain_buttons)
+    keyboard.append([InlineKeyboardButton("🔎 Остаться агентом", callback_data=f"join_agent_{room_id}")])
+
     await update.message.reply_text(
-        f"✅ **{user.first_name}, вы присоединились к комнате `{room_id}`!**\n\n"
-        f"**Сейчас в комнате:** {len(room.players)} игроков\n"
-        f"🎮 **Ссылка на игру:** {FRONTEND_URL}?room={room_id}\n\n"
-        "**Выберите роль:**",
+        f"✅ **{user.first_name}, вы в комнате `{room_id}`**\n\n"
+        f"Ваша команда: {room.players[user.id]['team']}\n"
+        f"Выберите роль или оставайтесь агентом:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )

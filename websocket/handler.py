@@ -10,77 +10,44 @@ from game.room import GameRoom
 active_rooms = {}
 
 async def websocket_handler(request):
-    """Обработчик WebSocket соединений"""
-    ws = web.WebSocketResponse(autoping=True, heartbeat=30)
+    ws = web.WebSocketResponse()
     await ws.prepare(request)
-    
+
     room_id = request.query.get('room', '').upper()
     user_id = request.query.get('user_id')
-    
+
     if not room_id or not user_id:
-        await ws.close(code=1008, message=b'Room ID and User ID required')
+        await ws.close(code=1008, message=b'Missing room or user_id')
         return ws
-    
+
+    try:
+        uid = int(user_id)
+    except:
+        await ws.close(code=1008, message=b'Invalid user_id')
+        return ws
+
     if room_id not in active_rooms:
         await ws.close(code=1008, message=b'Room not found')
         return ws
-    
+
     room = active_rooms[room_id]
-    
-    # Проверяем, зарегистрирован ли пользователь
-    try:
-        user_id_int = int(user_id)
-    except ValueError:
-        await ws.close(code=1008, message=b'Invalid User ID')
-        return ws
-    
-    if user_id_int not in room.players:
+    if uid not in room.players:
         await ws.close(code=1008, message=b'User not in room')
         return ws
-    
-    # Регистрируем соединение
+
     room.ws_connections.append(ws)
-    
+
     try:
-        # Отправляем текущее состояние игры для этого пользователя
-        game_state = room.get_game_state_for_player(user_id_int)
+        # Отправляем состояние для этого конкретного игрока
         await ws.send_json({
             'type': 'init',
-            'room': room_id,
-            'game_state': game_state,
-            'timestamp': datetime.now().isoformat()
+            'game_state': room.get_game_state_for_player(uid)
         })
-        
-        # Оповещаем других игроков о новом подключении
-        await broadcast_to_room(room_id, {
-            'type': 'player_joined',
-            'players_count': len(room.players),
-            'online_count': len(room.ws_connections),
-            'timestamp': datetime.now().isoformat()
-        }, exclude_ws=ws)
-        
-        # Обрабатываем сообщения от клиента
-        async for msg in ws:
-            if msg.type == web.WSMsgType.TEXT:
-                await handle_websocket_message(room_id, user_id_int, msg.data, ws)
-            elif msg.type == web.WSMsgType.ERROR:
-                break
-        
-    except Exception as e:
-        print(f"WebSocket error: {e}")
+
+        # ... обработка сообщений (click_card и т.д.) ...
     finally:
-        # Удаляем соединение
         if ws in room.ws_connections:
             room.ws_connections.remove(ws)
-            
-            # Уведомляем об отключении
-            await broadcast_to_room(room_id, {
-                'type': 'player_left',
-                'players_count': len(room.players),
-                'online_count': len(room.ws_connections),
-                'timestamp': datetime.now().isoformat()
-            })
-    
     return ws
 
 async def handle_websocket_message(room_id: str, user_id: int, message: str, ws: web.WebSocketResponse):

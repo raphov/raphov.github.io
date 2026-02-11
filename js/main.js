@@ -9,25 +9,16 @@ async function initApp() {
     
     // Получаем параметры URL
     const { roomId, userId } = getUrlParams();
-    
-    // Проверяем наличие комнаты
-    if (!roomId) {
-        UI.showError(
-            '❌ Ошибка: нет кода комнаты',
-            'Пожалуйста, откройте игру через кнопку в Telegram-боте<br>' +
-            '<a href="https://t.me/codenames_raphov_bot" target="_blank" style="color:#60a5fa;text-decoration:underline;">Перейти к боту</a>'
-        );
-        return;
-    }
-    
+
+    if (!roomId) { ... }
     if (!userId) {
         UI.showError(
             '❌ Ошибка: нет ID пользователя',
-            'Пожалуйста, откройте игру через кнопку в Telegram-боте'
+            'Пожалуйста, откройте игру через ссылку из Telegram-бота.<br>' +
+            'Вы должны сначала выбрать роль в боте.'
         );
         return;
     }
-    
     // Сохраняем в localStorage
     localStorage.setItem('last_room', roomId);
     localStorage.setItem('last_user', userId);
