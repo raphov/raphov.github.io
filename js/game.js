@@ -32,7 +32,7 @@ var GameManager = {
         console.log('🎮 Поле отрисовано, ' + words.length + ' карточек');
     },
 
-    /**
+     /**
      * Создание карточки
      */
     _createCard: function(word, index, isCaptain, gameState) {
@@ -49,18 +49,12 @@ var GameManager = {
                 card.classList.add(gameState.colors[index]);
             }
         }
-        // Если капитан и карточка не открыта - показываем цвет
+        // Если капитан и карточка не открыта – показываем цвет
         else if (isCaptain && gameState.colors) {
             card.classList.add('captain-view');
             card.classList.add(gameState.colors[index]);
             card.style.opacity = '0.85';
-            
-            // Добавляем подсказку для капитана
-            var hint = document.createElement('span');
-            hint.className = 'captain-hint';
-            hint.textContent = '👑';
-            hint.style.cssText = 'position: absolute; top: 5px; right: 5px; font-size: 14px; opacity: 0.7;';
-            card.appendChild(hint);
+            // ❌ Короны убраны – больше не добавляем hint с короной
         }
         // Если агент и карточка не открыта
         else {
@@ -70,6 +64,7 @@ var GameManager = {
 
         return card;
     },
+
 
     /**
      * Настройка событий удержания
@@ -168,10 +163,10 @@ var GameManager = {
         });
     },
 
-    /**
-     * Обновление карточки после открытия
+     /**
+     * Обновление карточки после открытия и счётчиков
      */
-    updateCard: function(index, color) {
+    updateCard: function(index, color, redScore, blueScore) {
         var cards = document.querySelectorAll('.card');
         if (!cards[index]) return;
         
@@ -183,13 +178,15 @@ var GameManager = {
         var progressBar = card.querySelector('.hold-progress');
         if (progressBar) progressBar.remove();
         
-        // Убираем значок капитана
-        var captainHint = card.querySelector('.captain-hint');
-        if (captainHint) captainHint.remove();
-        
-        // Убираем все обработчики
+        // Убираем обработчики
         var newCard = card.cloneNode(true);
         card.parentNode.replaceChild(newCard, card);
+        
+        // Обновляем счётчики
+        var redCount = document.getElementById('redCount');
+        var blueCount = document.getElementById('blueCount');
+        if (redCount && redScore !== undefined) redCount.textContent = redScore;
+        if (blueCount && blueScore !== undefined) blueCount.textContent = blueScore;
         
         // Обновляем статистику
         this.currentMove++;

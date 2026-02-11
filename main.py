@@ -62,17 +62,20 @@ class GameRoom:
             return ["яблоко", "гора", "мост", "врач", "луна", "книга", "огонь", "река", "часы"]
 
     def get_captain_state(self) -> Dict:
+        """Для капитана – со всеми цветами"""
         state = self.get_public_state()
         state['colors'] = self.game_state['colors']
         state['role'] = 'captain'
         return state
 
     def get_agent_state(self) -> Dict:
+        """Для агента – без цветов"""
         state = self.get_public_state()
         state['role'] = 'agent'
         return state
 
     def get_public_state(self) -> Dict:
+        """Общая часть состояния"""
         return {
             'room_id': self.room_id,
             'words': self.game_state['words'],
@@ -84,6 +87,10 @@ class GameRoom:
             'game_status': self.game_state['game_status'],
             'winner': self.game_state['winner'],
         }
+
+    def reset_game(self):
+        """Сбрасывает игру в комнате, создаёт новое состояние"""
+        self.game_state = self._create_game_state()
 
     def reveal_card(self, index: int) -> Dict:
         if not (0 <= index < 25) or self.game_state['revealed'][index]:
@@ -105,6 +112,8 @@ class GameRoom:
         return {
             'index': index,
             'color': color,
+            'red_score': self.game_state['red_score'],
+            'blue_score': self.game_state['blue_score'],
             'game_over': result['game_over'],
             'winner': result['winner']
         }
@@ -245,8 +254,6 @@ async def unknown_command(update: Update, context):
 
 # ==================== WEBSOCKET ====================
 async def websocket_handler(request):
-    """WebSocket обработчик"""
-    
     ws = web.WebSocketResponse(autoping=True, heartbeat=30)
     await ws.prepare(request)
 
@@ -265,6 +272,9 @@ async def websocket_handler(request):
         return ws
 
     room = active_rooms[room_id]
+    
+    # Сохраняем роль в объекте ws для последующей рассылки
+    ws.role = role
     room.ws_connections.append(ws)
     
     logger.info(f"✅ WebSocket подключен: комната {room_id}, всего: {len(room.ws_connections)}")
@@ -295,37 +305,63 @@ async def websocket_handler(request):
                             if 'error' in result:
                                 await ws.send_json({'type': 'error', 'message': result['error']})
                             else:
-                                # Рассылаем всем
+                                # Рассылаем обновление ВСЕМ в комнате
+                                update_msg = {
+                                    'type': 'card_revealed',
+                                    'index': result['index'],
+                                    'color': result['color'],
+                                    'red_score': result['red_score'],
+                                    'blue_score': result['blue_score']
+                                }
+                                
                                 for conn in room.ws_connections:
                                     if not conn.closed:
-                                        await conn.send_json({
-                                            'type': 'card_revealed',
-                                            'index': result['index'],
-                                            'color': result['color']
-                                        })
+                                        await conn.send_json(update_msg)
                                 
                                 if result['game_over']:
+                                    game_over_msg = {
+                                        'type': 'game_over',
+                                        'winner': result['winner']
+                                    }
                                     for conn in room.ws_connections:
                                         if not conn.closed:
-                                            await conn.send_json({
-                                                'type': 'game_over',
-                                                'winner': result['winner']
-                                            })
+                                            await conn.send_json(game_over_msg)
                                 
                                 elif result['color'] not in [room.game_state['current_team'], 'neutral', 'black']:
                                     room.switch_team()
+                                    turn_msg = {
+                                        'type': 'turn_switch',
+                                        'current_team': room.game_state['current_team']
+                                    }
                                     for conn in room.ws_connections:
                                         if not conn.closed:
-                                            await conn.send_json({
-                                                'type': 'turn_switch',
-                                                'current_team': room.game_state['current_team']
-                                            })
+                                            await conn.send_json(turn_msg)
+                    
+                    elif action == 'reset_game':
+                        # Сбрасываем состояние игры
+                        room.reset_game()
+                        # Рассылаем новое состояние каждому игроку с учётом его роли
+                        for conn in room.ws_connections:
+                            if not conn.closed:
+                                if hasattr(conn, 'role') and conn.role == 'captain':
+                                    state = room.get_captain_state()
+                                else:
+                                    state = room.get_agent_state()
+                                await conn.send_json({
+                                    'type': 'game_reset',
+                                    'game_state': state
+                                })
                     
                     elif action == 'ping':
                         await ws.send_json({'type': 'pong'})
                         
                 except json.JSONDecodeError:
                     logger.error(f"❌ JSON ошибка")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка обработки: {e}")
+            
+            elif msg.type == web.WSMsgType.ERROR:
+                logger.error(f"❌ WebSocket ошибка: {ws.exception()}")
 
     except Exception as e:
         logger.error(f"❌ WebSocket ошибка: {e}")
@@ -339,7 +375,6 @@ async def websocket_handler(request):
 
 # ==================== HTTP ЭНДПОИНТЫ ====================
 async def telegram_webhook(request):
-    """Обработчик вебхука Telegram"""
     try:
         data = await request.json()
         update = Update.de_json(data, application.bot)
@@ -350,7 +385,6 @@ async def telegram_webhook(request):
         return web.Response(text='Error', status=500)
 
 async def health_check(request):
-    """Проверка работоспособности"""
     total_connections = sum(len(r.ws_connections) for r in active_rooms.values())
     return web.json_response({
         'status': 'ok',
@@ -360,7 +394,6 @@ async def health_check(request):
     })
 
 async def debug_rooms(request):
-    """Отладка"""
     rooms_info = []
     for rid, room in active_rooms.items():
         rooms_info.append({
@@ -374,7 +407,6 @@ async def debug_rooms(request):
     return web.json_response(rooms_info)
 
 async def cors_handler(request):
-    """CORS"""
     return web.Response(
         headers={
             "Access-Control-Allow-Origin": "*",
@@ -393,10 +425,8 @@ async def cleanup_old_rooms():
             if not room.is_active():
                 room.cleanup()
                 to_remove.append(rid)
-        
         for rid in to_remove:
             del active_rooms[rid]
-        
         if to_remove:
             logger.info(f"🧹 Очищено {len(to_remove)} комнат")
 
@@ -405,7 +435,6 @@ async def cleanup_old_rooms():
 application = Application.builder().token(BOT_TOKEN).build()
 
 async def main():
-    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("new", new_command))
     application.add_handler(CommandHandler("join", join_command))
@@ -416,15 +445,11 @@ async def main():
     await application.initialize()
     await application.start()
 
-    # Вебхук
     webhook_url = f"{RENDER_URL}/telegram"
     await application.bot.set_webhook(webhook_url)
     logger.info(f"✅ Вебхук: {webhook_url}")
 
-    # HTTP сервер - БЕЗ MIDDLEWARE!
     server = web.Application()
-    
-    # Простые маршруты
     server.router.add_get('/', health_check)
     server.router.add_get('/health', health_check)
     server.router.add_get('/debug', debug_rooms)
@@ -432,14 +457,12 @@ async def main():
     server.router.add_get('/ws', websocket_handler)
     server.router.add_options('/{tail:.*}', cors_handler)
 
-    # Запуск
     runner = web.AppRunner(server)
     await runner.setup()
     port = int(os.environ.get('PORT', 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
 
-    # Очистка
     asyncio.create_task(cleanup_old_rooms())
 
     logger.info(f"🚀 Сервер на порту {port}")

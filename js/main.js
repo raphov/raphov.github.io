@@ -105,7 +105,14 @@ function setupWebSocketHandlers() {
     wsManager.on('game_over', function(data) {
         gameManager.showGameOver(data.winner, 'Игра завершена!');
     });
-    
+    // Сброс игры
+    wsManager.on('game_reset', function(data) {
+        gameManager.renderBoard(data.game_state);
+        gameManager.updateGameInfo(data.game_state);
+        gameManager.currentMove = 1;
+        showNotification('🔄 Новая игра началась!', 'success');
+    });
+        
     // Ошибки
     wsManager.on('error', function(data) {
         showNotification(data.message || 'Ошибка сервера', 'error');

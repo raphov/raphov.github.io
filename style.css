@@ -1586,3 +1586,27 @@ body.landscape .game-header {
 .btn-warning:hover {
     background: linear-gradient(135deg, #fbbf24, #f59e0b);
 }
+
+
+/* ===== СТИЛИ ДЛЯ КАПИТАНА (цветные карточки) ===== */
+.card.captain-view.red {
+    background: linear-gradient(145deg, rgba(220, 38, 38, 0.7), rgba(185, 28, 28, 0.7));
+    border-color: #fecaca;
+}
+
+.card.captain-view.blue {
+    background: linear-gradient(145deg, rgba(37, 99, 235, 0.7), rgba(29, 78, 216, 0.7));
+    border-color: #bfdbfe;
+}
+
+.card.captain-view.black {
+    background: linear-gradient(145deg, rgba(0, 0, 0, 0.8), rgba(31, 41, 55, 0.8));
+    border-color: #4b5563;
+}
+
+.card.captain-view.neutral {
+    background: linear-gradient(145deg, rgba(217, 119, 6, 0.7), rgba(180, 83, 9, 0.7));
+    border-color: #fbbf24;
+}
+
+/* Убираем короны – они больше не добавляются в JS */

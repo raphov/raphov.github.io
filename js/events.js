@@ -83,8 +83,8 @@ var EventManager = {
         var btnNewGame = document.getElementById('btnNewGame');
         if (btnNewGame) {
             btnNewGame.addEventListener('click', function() {
-                if (confirm('Создать новую игру? Текущий прогресс будет потерян.')) {
-                    location.reload();
+                if (confirm('Начать новую игру в этой комнате?')) {
+                    wsManager.send({ action: 'reset_game' });
                 }
             });
         }
