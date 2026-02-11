@@ -1,44 +1,42 @@
 // ==================== ИГРОВАЯ ЛОГИКА ====================
 
-class GameManager {
-    constructor() {
-        this.gameState = null;
-        this.holdTimers = {};
-        this.currentMove = 1;
-    }
+var GameManager = {
+    gameState: null,
+    holdTimers: {},
+    currentMove: 1,
 
     /**
      * Отрисовка игрового поля
      */
-    renderBoard(gameState) {
+    renderBoard: function(gameState) {
         if (!gameState || !gameState.words) {
             console.error('❌ Нет данных для отрисовки');
             return;
         }
 
         this.gameState = gameState;
-        const board = document.getElementById('gameBoard');
+        var board = document.getElementById('gameBoard');
         if (!board) return;
 
         board.innerHTML = '';
         this._clearHoldTimers();
 
-        const isCaptain = gameState.user_role === ROLES.CAPTAIN;
-        const userTeam = gameState.user_team;
+        var isCaptain = (gameState.role === ROLES.CAPTAIN);
+        var words = gameState.words;
 
-        gameState.words.forEach((word, index) => {
-            const card = this._createCard(word, index, isCaptain, userTeam, gameState);
+        for (var i = 0; i < words.length; i++) {
+            var card = this._createCard(words[i], i, isCaptain, gameState);
             board.appendChild(card);
-        });
+        }
 
-        console.log(`🎮 Поле отрисовано, ${gameState.words.length} карточек`);
-    }
+        console.log('🎮 Поле отрисовано, ' + words.length + ' карточек');
+    },
 
     /**
      * Создание карточки
      */
-    _createCard(word, index, isCaptain, userTeam, gameState) {
-        const card = document.createElement('div');
+    _createCard: function(word, index, isCaptain, gameState) {
+        var card = document.createElement('div');
         card.className = 'card';
         card.textContent = word;
         card.dataset.index = index;
@@ -47,26 +45,21 @@ class GameManager {
         // Если карточка уже открыта
         if (gameState.revealed[index]) {
             card.classList.add('opened');
-            card.classList.add(gameState.colors?.[index] || 'neutral');
+            if (gameState.colors && gameState.colors[index]) {
+                card.classList.add(gameState.colors[index]);
+            }
         }
         // Если капитан и карточка не открыта - показываем цвет
         else if (isCaptain && gameState.colors) {
             card.classList.add('captain-view');
             card.classList.add(gameState.colors[index]);
-            card.style.opacity = '0.85'; // Полупрозрачная для неоткрытых
-            card.style.boxShadow = '0 0 15px rgba(255,255,255,0.1)';
+            card.style.opacity = '0.85';
             
             // Добавляем подсказку для капитана
-            const hint = document.createElement('span');
+            var hint = document.createElement('span');
             hint.className = 'captain-hint';
             hint.textContent = '👑';
-            hint.style.cssText = `
-                position: absolute;
-                top: 5px;
-                right: 5px;
-                font-size: 14px;
-                opacity: 0.7;
-            `;
+            hint.style.cssText = 'position: absolute; top: 5px; right: 5px; font-size: 14px; opacity: 0.7;';
             card.appendChild(hint);
         }
         // Если агент и карточка не открыта
@@ -76,40 +69,35 @@ class GameManager {
         }
 
         return card;
-    }
+    },
 
     /**
      * Настройка событий удержания
      */
-    _setupHoldEvents(card, index) {
-        let holdTimer = null;
-        let isHolding = false;
-        let holdProgress = 0;
-        let progressInterval = null;
+    _setupHoldEvents: function(card, index) {
+        var self = this;
+        var holdTimer = null;
+        var isHolding = false;
+        var holdProgress = 0;
+        var progressInterval = null;
 
         // Индикатор прогресса
-        const progressBar = document.createElement('div');
+        var progressBar = document.createElement('div');
         progressBar.className = 'hold-progress';
-        progressBar.style.cssText = `
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            width: 0%;
-            height: 4px;
-            background: linear-gradient(90deg, #fbbf24, #f59e0b);
-            border-radius: 0 0 8px 8px;
-            transition: width 0.1s linear;
-            z-index: 10;
-        `;
+        progressBar.style.cssText = 'position: absolute; bottom: 0; left: 0; width: 0%; height: 4px; background: linear-gradient(90deg, #fbbf24, #f59e0b); border-radius: 0 0 8px 8px; transition: width 0.1s linear; z-index: 10;';
         card.appendChild(progressBar);
 
-        const startHold = (e) => {
-            if (this.gameState?.revealed[index] || !wsManager.isConnected) {
+        var startHold = function(e) {
+            if (self.gameState && self.gameState.revealed[index]) {
+                return;
+            }
+            if (!wsManager.isConnected) {
+                showNotification('Нет соединения с сервером', 'error');
                 return;
             }
             
             e.preventDefault();
-            this._clearHoldTimer(index);
+            self._clearHoldTimer(index);
             
             card.classList.add('holding');
             isHolding = true;
@@ -117,45 +105,48 @@ class GameManager {
             progressBar.style.width = '0%';
             
             // Запускаем прогресс-бар
-            progressInterval = setInterval(() => {
+            progressInterval = setInterval(function() {
                 holdProgress += 100 / (CONFIG.HOLD_DURATION / 100);
                 progressBar.style.width = Math.min(holdProgress, 100) + '%';
             }, 100);
             
-            holdTimer = setTimeout(() => {
+            holdTimer = setTimeout(function() {
                 if (wsManager.isConnected) {
                     wsManager.send({
                         action: 'click_card',
                         index: index
                     });
                     
-                    // Вибрация на мобильных
                     if (navigator.vibrate) {
                         navigator.vibrate(50);
                     }
                 }
-                this._clearHoldTimer(index);
+                self._clearHoldTimer(index);
             }, CONFIG.HOLD_DURATION);
             
-            this.holdTimers[index] = holdTimer;
+            self.holdTimers[index] = holdTimer;
         };
 
-        const endHold = () => {
-            this._clearHoldTimer(index);
-            clearInterval(progressInterval);
+        var endHold = function() {
+            self._clearHoldTimer(index);
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
             card.classList.remove('holding');
             progressBar.style.width = '0%';
             
             if (isHolding) {
-                UI.showNotification('Удерживайте 1.5 секунды для выбора', 'info', 1000);
+                showNotification('Удерживайте 1.5 секунды для выбора', 'info', 1000);
             }
             
             isHolding = false;
         };
 
-        const cancelHold = () => {
-            this._clearHoldTimer(index);
-            clearInterval(progressInterval);
+        var cancelHold = function() {
+            self._clearHoldTimer(index);
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
             card.classList.remove('holding');
             progressBar.style.width = '0%';
             isHolding = false;
@@ -172,143 +163,158 @@ class GameManager {
         card.addEventListener('touchcancel', cancelHold);
         
         // Отмена контекстного меню
-        card.addEventListener('contextmenu', (e) => e.preventDefault());
-    }
+        card.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+    },
 
     /**
      * Обновление карточки после открытия
      */
-    updateCard(index, color) {
-        const cards = document.querySelectorAll('.card');
+    updateCard: function(index, color) {
+        var cards = document.querySelectorAll('.card');
         if (!cards[index]) return;
         
-        const card = cards[index];
+        var card = cards[index];
         card.classList.add('opened', color);
         card.style.opacity = '1';
         
         // Убираем прогресс-бар
-        const progressBar = card.querySelector('.hold-progress');
+        var progressBar = card.querySelector('.hold-progress');
         if (progressBar) progressBar.remove();
         
         // Убираем значок капитана
-        const captainHint = card.querySelector('.captain-hint');
+        var captainHint = card.querySelector('.captain-hint');
         if (captainHint) captainHint.remove();
         
         // Убираем все обработчики
-        card.replaceWith(card.cloneNode(true));
+        var newCard = card.cloneNode(true);
+        card.parentNode.replaceChild(newCard, card);
         
         // Обновляем статистику
         this.currentMove++;
         this._updateStats();
-    }
+    },
 
     /**
      * Обновление информации об игре
      */
-    updateGameInfo(gameState) {
+    updateGameInfo: function(gameState) {
         this.gameState = gameState;
         
         // Обновляем счёт
-        const redCount = document.getElementById('redCount');
-        const blueCount = document.getElementById('blueCount');
-        const currentTurn = document.getElementById('currentTurn');
+        var redCount = document.getElementById('redCount');
+        var blueCount = document.getElementById('blueCount');
+        var currentTurn = document.getElementById('currentTurn');
         
         if (redCount) redCount.textContent = gameState.red_score || 0;
         if (blueCount) blueCount.textContent = gameState.blue_score || 0;
         
         // Обновляем текущий ход
         if (currentTurn && gameState.current_team) {
-            const teamName = TEAM_NAMES[gameState.current_team] || 'Красные';
-            const teamClass = gameState.current_team;
+            var teamName = TEAM_NAMES[gameState.current_team] || 'Красные';
+            var teamClass = gameState.current_team;
             
-            currentTurn.innerHTML = `
-                <div class="turn-label">Сейчас ходят:</div>
-                <div class="turn-team ${teamClass}">${teamName}</div>
-            `;
+            currentTurn.innerHTML = '<div class="turn-label">Сейчас ходят:</div>' +
+                '<div class="turn-team ' + teamClass + '">' + teamName + '</div>';
         }
         
         // Обновляем статистику
         this._updateStats();
-    }
+    },
 
     /**
      * Обновление статистики
      */
-    _updateStats() {
-        const openedCards = document.getElementById('openedCards');
-        const currentMoveEl = document.getElementById('currentMove');
+    _updateStats: function() {
+        var openedCards = document.getElementById('openedCards');
+        var currentMoveEl = document.getElementById('currentMove');
         
-        if (openedCards && this.gameState?.revealed) {
-            const opened = this.gameState.revealed.filter(Boolean).length;
+        if (openedCards && this.gameState && this.gameState.revealed) {
+            var opened = 0;
+            for (var i = 0; i < this.gameState.revealed.length; i++) {
+                if (this.gameState.revealed[i]) opened++;
+            }
             openedCards.textContent = opened;
         }
         
         if (currentMoveEl) {
             currentMoveEl.textContent = this.currentMove;
         }
-    }
+    },
 
     /**
      * Очистка таймера удержания
      */
-    _clearHoldTimer(index) {
+    _clearHoldTimer: function(index) {
         if (this.holdTimers[index]) {
             clearTimeout(this.holdTimers[index]);
             delete this.holdTimers[index];
         }
-    }
+    },
 
     /**
      * Очистка всех таймеров
      */
-    _clearHoldTimers() {
-        Object.keys(this.holdTimers).forEach(key => {
+    _clearHoldTimers: function() {
+        for (var key in this.holdTimers) {
             clearTimeout(this.holdTimers[key]);
-        });
+        }
         this.holdTimers = {};
-    }
+    },
 
     /**
      * Показ окна победы
      */
-    showGameOver(winner, reason) {
-        const winnerName = TEAM_NAMES[winner] || winner;
-        const winnerColor = getTeamColor(winner);
+    showGameOver: function(winner, reason) {
+        var winnerName = TEAM_NAMES[winner] || winner;
+        var winnerColor = getTeamColor(winner);
         
-        UI.showModal(
-            '🏆 Игра окончена!',
-            `
-                <div style="text-align: center;">
-                    <div style="font-size: 2rem; color: ${winnerColor}; margin: 20px 0;">
-                        <i class="fas fa-crown"></i> Победили ${winnerName}
-                    </div>
-                    <p style="color: #94a3b8;">${reason || 'Поздравляем!'}</p>
-                </div>
-            `,
-            [
-                {
-                    text: '🔄 Новая игра',
-                    class: 'btn-primary',
-                    onClick: () => location.reload()
-                },
-                {
-                    text: '📋 Поделиться',
-                    class: 'btn-secondary',
-                    onClick: async () => {
-                        const results = `🎮 Codenames - Победили ${winnerName}!\nКомната: ${this.gameState?.room_id}\nСсылка: ${window.location.href}`;
-                        await copyToClipboard(results);
-                        UI.showNotification('✅ Результаты скопированы!', 'success');
-                    }
-                }
-            ]
-        );
+        var modal = document.createElement('div');
+        modal.className = 'modal show';
+        modal.innerHTML = '<div class="modal-content" style="max-width: 500px;">' +
+            '<div class="modal-header">' +
+            '<h3>🏆 Игра окончена!</h3>' +
+            '<button class="modal-close">&times;</button>' +
+            '</div>' +
+            '<div class="modal-body" style="text-align: center;">' +
+            '<div style="font-size: 2rem; color: ' + winnerColor + '; margin: 20px 0;">' +
+            '<i class="fas fa-crown"></i> Победили ' + winnerName +
+            '</div>' +
+            '<p style="color: #94a3b8;">' + (reason || 'Поздравляем!') + '</p>' +
+            '<div style="display: flex; gap: 15px; justify-content: center; margin-top: 30px;">' +
+            '<button class="btn-primary" onclick="location.reload()">🔄 Новая игра</button>' +
+            '<button class="btn-secondary" id="shareResultsBtn">📋 Поделиться</button>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        
+        document.body.appendChild(modal);
+        
+        // Закрытие по крестику
+        var closeBtn = modal.querySelector('.modal-close');
+        closeBtn.onclick = function() {
+            document.body.removeChild(modal);
+        };
+        
+        // Закрытие по клику на фон
+        modal.onclick = function(e) {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        };
+        
+        // Кнопка поделиться
+        var shareBtn = modal.querySelector('#shareResultsBtn');
+        if (shareBtn) {
+            shareBtn.onclick = function() {
+                var results = '🎮 Codenames - Победили ' + winnerName + '!\nКомната: ' + (gameManager.gameState ? gameManager.gameState.room_id : '') + '\nСсылка: ' + window.location.href;
+                copyToClipboard(results);
+                showNotification('✅ Результаты скопированы!', 'success');
+            };
+        }
     }
-}
+};
 
 // Глобальный экземпляр
-const gameManager = new GameManager();
-
-// ==================== ЭКСПОРТ ====================
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { GameManager, gameManager };
-}
+var gameManager = GameManager;

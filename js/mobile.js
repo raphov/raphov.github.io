@@ -1,22 +1,16 @@
 // ==================== МОБИЛЬНЫЙ МЕНЕДЖЕР ====================
 
-class MobileManager {
-    constructor() {
-        this.orientation = localStorage.getItem('codenames_orientation') || 'auto';
-        this.isMobile = this._detectMobile();
-    }
-
-    /**
-     * Определение мобильного устройства
-     */
-    _detectMobile() {
-        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    }
+var MobileManager = {
+    orientation: 'auto',
+    isMobile: false,
 
     /**
      * Инициализация
      */
-    init() {
+    init: function() {
+        this.orientation = localStorage.getItem('codenames_orientation') || 'auto';
+        this.isMobile = this._detectMobile();
+        
         if (this.isMobile) {
             document.body.classList.add('mobile-device');
             this._setupMobileOptimizations();
@@ -25,23 +19,31 @@ class MobileManager {
         
         this._setupOrientationControls();
         this._setupOrientationListeners();
-    }
+    },
+
+    /**
+     * Определение мобильного устройства
+     */
+    _detectMobile: function() {
+        var ua = navigator.userAgent;
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    },
 
     /**
      * Мобильные оптимизации
      */
-    _setupMobileOptimizations() {
+    _setupMobileOptimizations: function() {
         // Предотвращаем зум при двойном тапе
-        document.addEventListener('touchstart', (event) => {
+        document.addEventListener('touchstart', function(event) {
             if (event.touches.length > 1) {
                 event.preventDefault();
             }
         }, { passive: false });
         
         // Предотвращаем масштабирование
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', (event) => {
-            const now = Date.now();
+        var lastTouchEnd = 0;
+        document.addEventListener('touchend', function(event) {
+            var now = Date.now();
             if (now - lastTouchEnd <= 300) {
                 event.preventDefault();
             }
@@ -49,57 +51,66 @@ class MobileManager {
         }, false);
         
         // Предотвращаем контекстное меню на карточках
-        document.addEventListener('contextmenu', (event) => {
+        document.addEventListener('contextmenu', function(event) {
             if (event.target.classList.contains('card')) {
                 event.preventDefault();
             }
         });
-    }
+    },
 
     /**
      * Предложение полноэкранного режима
      */
-    _suggestFullscreen() {
+    _suggestFullscreen: function() {
         if (!localStorage.getItem('fullscreen_suggested')) {
-            setTimeout(() => {
-                UI.showNotification('Нажмите 🖥️ для полноэкранного режима', 'info', 5000);
+            setTimeout(function() {
+                showNotification('Нажмите 🖥️ для полноэкранного режима', 'info', 5000);
                 localStorage.setItem('fullscreen_suggested', 'true');
             }, 3000);
         }
-    }
+    },
 
     /**
      * Настройка кнопок ориентации
      */
-    _setupOrientationControls() {
-        const btnAuto = document.getElementById('btnAuto');
-        const btnPortrait = document.getElementById('btnPortrait');
-        const btnLandscape = document.getElementById('btnLandscape');
+    _setupOrientationControls: function() {
+        var self = this;
+        var btnAuto = document.getElementById('btnAuto');
+        var btnPortrait = document.getElementById('btnPortrait');
+        var btnLandscape = document.getElementById('btnLandscape');
         
         if (!btnAuto || !btnPortrait || !btnLandscape) return;
         
         this._applyOrientation(this.orientation);
         
-        btnAuto.addEventListener('click', () => this._setOrientation('auto'));
-        btnPortrait.addEventListener('click', () => this._setOrientation('portrait'));
-        btnLandscape.addEventListener('click', () => this._setOrientation('landscape'));
-    }
+        btnAuto.addEventListener('click', function() {
+            self._setOrientation('auto');
+        });
+        
+        btnPortrait.addEventListener('click', function() {
+            self._setOrientation('portrait');
+        });
+        
+        btnLandscape.addEventListener('click', function() {
+            self._setOrientation('landscape');
+        });
+    },
 
     /**
      * Установка ориентации
      */
-    _setOrientation(mode) {
+    _setOrientation: function(mode) {
         this.orientation = mode;
         this._applyOrientation(mode);
         localStorage.setItem('codenames_orientation', mode);
         
-        const modeNames = {
+        var modeNames = {
             auto: 'Автоповорот',
             portrait: 'Портретный режим',
             landscape: 'Альбомный режим'
         };
         
-        UI.showNotification(modeNames[mode] || mode, 'info');
+        showNotification(modeNames[mode] || mode, 'info');
         
         if (mode === 'portrait') {
             this._lockOrientation('portrait-primary');
@@ -108,100 +119,101 @@ class MobileManager {
         } else {
             this._unlockOrientation();
         }
-    }
+    },
 
     /**
      * Применение ориентации
      */
-    _applyOrientation(mode) {
+    _applyOrientation: function(mode) {
         document.body.classList.remove('auto-rotate', 'portrait', 'landscape');
         document.body.classList.add(mode);
         
         // Обновляем активные кнопки
-        document.querySelectorAll('.orientation-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
+        var buttons = document.querySelectorAll('.orientation-btn');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].classList.remove('active');
+        }
         
-        const btnId = `btn${mode.charAt(0).toUpperCase() + mode.slice(1)}`;
-        const btn = document.getElementById(btnId);
+        var btnId = 'btn' + mode.charAt(0).toUpperCase() + mode.slice(1);
+        var btn = document.getElementById(btnId);
         if (btn) btn.classList.add('active');
         
         // Адаптируем карточки
         this._adaptCardsToOrientation();
-    }
+    },
 
     /**
      * Адаптация карточек к ориентации
      */
-    _adaptCardsToOrientation() {
-        const isLandscape = document.body.classList.contains('landscape') || 
-                           (document.body.classList.contains('auto-rotate') && window.innerWidth > window.innerHeight);
+    _adaptCardsToOrientation: function() {
+        var isLandscape = document.body.classList.contains('landscape') || 
+                          (document.body.classList.contains('auto-rotate') && window.innerWidth > window.innerHeight);
         
-        const cards = document.querySelectorAll('.card');
-        cards.forEach(card => {
+        var cards = document.querySelectorAll('.card');
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
             if (isLandscape) {
                 card.style.aspectRatio = '4/3';
+                if (window.innerHeight < 600) {
+                    card.style.fontSize = '11px';
+                    card.style.padding = '4px';
+                } else {
+                    card.style.fontSize = '';
+                    card.style.padding = '';
+                }
             } else {
                 card.style.aspectRatio = '3/4';
-            }
-            
-            // Адаптация размера шрифта
-            if (isLandscape && window.innerHeight < 600) {
-                card.style.fontSize = '11px';
-                card.style.padding = '4px';
-            } else {
                 card.style.fontSize = '';
                 card.style.padding = '';
             }
-        });
-    }
+        }
+    },
 
     /**
      * Блокировка ориентации экрана
      */
-    _lockOrientation(orientation) {
+    _lockOrientation: function(orientation) {
         if (screen.orientation && screen.orientation.lock) {
-            screen.orientation.lock(orientation).catch(() => {
-                UI.showNotification('Поверните телефон вручную', 'info');
+            screen.orientation.lock(orientation).catch(function() {
+                showNotification('Поверните телефон вручную', 'info');
             });
         } else if (screen.lockOrientation) {
             screen.lockOrientation(orientation);
         } else {
-            UI.showNotification('Поверните телефон вручную', 'info');
+            showNotification('Поверните телефон вручную', 'info');
         }
-    }
+    },
 
     /**
      * Разблокировка ориентации
      */
-    _unlockOrientation() {
+    _unlockOrientation: function() {
         if (screen.orientation && screen.orientation.unlock) {
             screen.orientation.unlock();
         } else if (screen.unlockOrientation) {
             screen.unlockOrientation();
         }
-    }
+    },
 
     /**
      * Настройка слушателей ориентации
      */
-    _setupOrientationListeners() {
-        window.addEventListener('orientationchange', () => {
-            setTimeout(() => this._adaptCardsToOrientation(), 300);
+    _setupOrientationListeners: function() {
+        var self = this;
+        
+        window.addEventListener('orientationchange', function() {
+            setTimeout(function() {
+                self._adaptCardsToOrientation();
+            }, 300);
         });
         
-        window.addEventListener('resize', debounce(() => {
-            if (this.orientation === 'auto') {
-                this._adaptCardsToOrientation();
+        window.addEventListener('resize', debounce(function() {
+            if (self.orientation === 'auto') {
+                self._adaptCardsToOrientation();
             }
         }, 100));
     }
-}
+};
 
 // Глобальный экземпляр
-const mobileManager = new MobileManager();
-
-// ==================== ЭКСПОРТ ====================
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { MobileManager, mobileManager };
-}
+var mobileManager = MobileManager;

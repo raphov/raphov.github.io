@@ -4,23 +4,23 @@
  * Получение параметров URL
  */
 function getUrlParams() {
-    const params = new URLSearchParams(window.location.search);
+    var params = new URLSearchParams(window.location.search);
     return {
-        roomId: params.get('room')?.toUpperCase() || null,
-        userId: params.get('user_id') || null
+        roomId: params.get('room') ? params.get('room').toUpperCase() : null,
+        role: params.get('role') || 'agent'
     };
 }
 
 /**
  * Копирование текста в буфер обмена
  */
-async function copyToClipboard(text) {
+function copyToClipboard(text) {
     try {
-        await navigator.clipboard.writeText(text);
+        navigator.clipboard.writeText(text);
         return true;
     } catch (err) {
         // Резервный метод
-        const textArea = document.createElement('textarea');
+        var textArea = document.createElement('textarea');
         textArea.value = text;
         document.body.appendChild(textArea);
         textArea.select();
@@ -34,23 +34,23 @@ async function copyToClipboard(text) {
  * Форматирование времени
  */
 function formatTime(seconds) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    var mins = Math.floor(seconds / 60);
+    var secs = seconds % 60;
+    return mins + ':' + (secs < 10 ? '0' + secs : secs);
 }
 
 /**
  * Debounce для оптимизации
  */
 function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
+    var timeout;
+    return function() {
+        var context = this;
+        var args = arguments;
         clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
+        timeout = setTimeout(function() {
+            func.apply(context, args);
+        }, wait);
     };
 }
 
@@ -66,7 +66,11 @@ function getTeamColor(team) {
     }
 }
 
-// ==================== ЭКСПОРТ ====================
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { getUrlParams, copyToClipboard, formatTime, debounce, getTeamColor };
+/**
+ * Экранирование HTML
+ */
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }

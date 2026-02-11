@@ -1,75 +1,88 @@
 // ==================== МЕНЕДЖЕР СОБЫТИЙ ====================
 
-class EventManager {
-    constructor() {
-        this.hotkeys = {
-            'f': () => UI.toggleFullscreen(),
-            'F': () => UI.toggleFullscreen(),
-            'Escape': () => this._handleEscape(),
-            '1': () => mobileManager._setOrientation('portrait'),
-            '2': () => mobileManager._setOrientation('landscape'),
-            '3': () => mobileManager._setOrientation('auto'),
-            'm': () => UI.toggleMenu(),
-            'M': () => UI.toggleMenu(),
-            'r': () => this._showRules(),
-            'R': () => this._showRules(),
-            'c': () => this._copyLink(),
-            'C': () => this._copyLink()
-        };
-    }
+var EventManager = {
+    hotkeys: {
+        'f': function() { UI.toggleFullscreen(); },
+        'F': function() { UI.toggleFullscreen(); },
+        'Escape': function() { this._handleEscape(); },
+        '1': function() { mobileManager._setOrientation('portrait'); },
+        '2': function() { mobileManager._setOrientation('landscape'); },
+        '3': function() { mobileManager._setOrientation('auto'); },
+        'm': function() { UI.toggleMenu(); },
+        'M': function() { UI.toggleMenu(); },
+        'r': function() { UI.showRules(); },
+        'R': function() { UI.showRules(); },
+        'c': function() { this._copyLink(); },
+        'C': function() { this._copyLink(); }
+    },
 
     /**
      * Инициализация всех обработчиков
      */
-    init() {
+    init: function() {
         this._setupGlobalEvents();
         this._setupButtonEvents();
         this._setupModalEvents();
         this._setupHotkeys();
-    }
+    },
 
     /**
      * Глобальные события
      */
-    _setupGlobalEvents() {
+    _setupGlobalEvents: function() {
+        var self = this;
+        
         // Подтверждение ухода со страницы
-        window.addEventListener('beforeunload', (e) => {
-            if (gameManager.gameState?.revealed?.some(Boolean)) {
-                e.preventDefault();
-                e.returnValue = 'У вас есть незавершённая игра. Вы уверены?';
+        window.addEventListener('beforeunload', function(e) {
+            if (gameManager.gameState && gameManager.gameState.revealed) {
+                var hasRevealed = false;
+                for (var i = 0; i < gameManager.gameState.revealed.length; i++) {
+                    if (gameManager.gameState.revealed[i]) {
+                        hasRevealed = true;
+                        break;
+                    }
+                }
+                if (hasRevealed) {
+                    e.preventDefault();
+                    e.returnValue = 'У вас есть незавершённая игра. Вы уверены?';
+                }
             }
         });
         
         // Восстановление соединения при возвращении
-        window.addEventListener('focus', () => {
+        window.addEventListener('focus', function() {
             if (!wsManager.isConnected) {
-                const params = getUrlParams();
-                if (params.roomId && params.userId) {
-                    wsManager.connect(params.roomId, params.userId);
+                var params = getUrlParams();
+                if (params.roomId && params.role) {
+                    wsManager.connect(params.roomId, params.role);
                 }
             }
         });
         
         // Отслеживание полноэкранного режима
-        document.addEventListener('fullscreenchange', () => this._updateFullscreenButton());
-        document.addEventListener('webkitfullscreenchange', () => this._updateFullscreenButton());
-        document.addEventListener('mozfullscreenchange', () => this._updateFullscreenButton());
-    }
+        document.addEventListener('fullscreenchange', function() { self._updateFullscreenButton(); });
+        document.addEventListener('webkitfullscreenchange', function() { self._updateFullscreenButton(); });
+        document.addEventListener('mozfullscreenchange', function() { self._updateFullscreenButton(); });
+    },
 
     /**
      * Кнопки интерфейса
      */
-    _setupButtonEvents() {
+    _setupButtonEvents: function() {
+        var self = this;
+        
         // Копирование ссылки
-        const btnCopyLink = document.getElementById('btnCopyLink');
+        var btnCopyLink = document.getElementById('btnCopyLink');
         if (btnCopyLink) {
-            btnCopyLink.addEventListener('click', () => this._copyLink());
+            btnCopyLink.addEventListener('click', function() {
+                self._copyLink();
+            });
         }
         
         // Новая игра
-        const btnNewGame = document.getElementById('btnNewGame');
+        var btnNewGame = document.getElementById('btnNewGame');
         if (btnNewGame) {
-            btnNewGame.addEventListener('click', () => {
+            btnNewGame.addEventListener('click', function() {
                 if (confirm('Создать новую игру? Текущий прогресс будет потерян.')) {
                     location.reload();
                 }
@@ -77,180 +90,193 @@ class EventManager {
         }
         
         // Бургер-меню
-        const burgerBtn = document.getElementById('burgerBtn');
-        const closeMenu = document.getElementById('closeMenu');
-        const menuOverlay = document.getElementById('menuOverlay');
+        var burgerBtn = document.getElementById('burgerBtn');
+        var closeMenu = document.getElementById('closeMenu');
+        var menuOverlay = document.getElementById('menuOverlay');
         
-        if (burgerBtn) burgerBtn.addEventListener('click', () => UI.toggleMenu());
-        if (closeMenu) closeMenu.addEventListener('click', () => UI.closeMenu());
-        if (menuOverlay) menuOverlay.addEventListener('click', () => UI.closeMenu());
+        if (burgerBtn) {
+            burgerBtn.addEventListener('click', function() {
+                UI.toggleMenu();
+            });
+        }
+        
+        if (closeMenu) {
+            closeMenu.addEventListener('click', function() {
+                UI.closeMenu();
+            });
+        }
+        
+        if (menuOverlay) {
+            menuOverlay.addEventListener('click', function() {
+                UI.closeMenu();
+            });
+        }
         
         // Полноэкранный режим
-        const btnFullscreen = document.getElementById('btnFullscreen');
+        var btnFullscreen = document.getElementById('btnFullscreen');
         if (btnFullscreen) {
-            btnFullscreen.addEventListener('click', () => UI.toggleFullscreen());
+            btnFullscreen.addEventListener('click', function() {
+                UI.toggleFullscreen();
+            });
         }
         
         // Кнопки меню
         this._setupMenuButtons();
-    }
+    },
 
     /**
      * Кнопки в меню
      */
-    _setupMenuButtons() {
+    _setupMenuButtons: function() {
         // Правила
-        const showRules = document.getElementById('showRules');
+        var showRules = document.getElementById('showRules');
         if (showRules) {
-            showRules.addEventListener('click', () => this._showRules());
+            showRules.addEventListener('click', function() {
+                UI.showRules();
+            });
         }
         
         // Горячие клавиши
-        const showHotkeys = document.getElementById('showHotkeys');
+        var showHotkeys = document.getElementById('showHotkeys');
         if (showHotkeys) {
-            showHotkeys.addEventListener('click', () => this._showHotkeys());
+            showHotkeys.addEventListener('click', function() {
+                UI.showHotkeys();
+            });
         }
         
         // О проекте
-        const showAbout = document.getElementById('showAbout');
+        var showAbout = document.getElementById('showAbout');
         if (showAbout) {
-            showAbout.addEventListener('click', () => this._showAbout());
+            showAbout.addEventListener('click', function() {
+                UI.showAbout();
+            });
         }
         
         // Звук
-        const soundToggle = document.getElementById('soundToggle');
+        var soundToggle = document.getElementById('soundToggle');
         if (soundToggle) {
-            soundToggle.addEventListener('click', () => this._toggleSound());
+            soundToggle.addEventListener('click', function() {
+                this._toggleSound();
+            }.bind(this));
         }
         
         // Смена роли
-        const changeRole = document.getElementById('changeRole');
+        var changeRole = document.getElementById('changeRole');
         if (changeRole) {
-            changeRole.addEventListener('click', () => {
-                UI.showNotification('Роль можно сменить только при создании комнаты', 'info');
+            changeRole.addEventListener('click', function() {
+                showNotification('Роль можно сменить только при создании комнаты', 'info');
             });
         }
-    }
+    },
 
     /**
      * Модальные окна
      */
-    _setupModalEvents() {
+    _setupModalEvents: function() {
         // Модальное окно правил
-        const rulesModal = document.getElementById('rulesModal');
+        var rulesModal = document.getElementById('rulesModal');
         if (rulesModal) {
-            const closeBtn = rulesModal.querySelector('.modal-close');
+            var closeBtn = rulesModal.querySelector('.modal-close');
             if (closeBtn) {
-                closeBtn.addEventListener('click', () => rulesModal.classList.remove('show'));
+                closeBtn.addEventListener('click', function() {
+                    rulesModal.classList.remove('show');
+                });
             }
             
-            rulesModal.addEventListener('click', (e) => {
+            rulesModal.addEventListener('click', function(e) {
                 if (e.target === rulesModal) {
                     rulesModal.classList.remove('show');
                 }
             });
         }
         
-        // Аналогично для других модалок
-        ['hotkeysModal', 'aboutModal'].forEach(modalId => {
-            const modal = document.getElementById(modalId);
-            if (modal) {
-                const closeBtn = modal.querySelector('.modal-close');
-                if (closeBtn) {
-                    closeBtn.addEventListener('click', () => modal.classList.remove('show'));
-                }
-                
-                modal.addEventListener('click', (e) => {
-                    if (e.target === modal) {
-                        modal.classList.remove('show');
-                    }
+        // Модальное окно горячих клавиш
+        var hotkeysModal = document.getElementById('hotkeysModal');
+        if (hotkeysModal) {
+            var closeBtn = hotkeysModal.querySelector('.modal-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function() {
+                    hotkeysModal.classList.remove('show');
                 });
             }
-        });
-    }
+            
+            hotkeysModal.addEventListener('click', function(e) {
+                if (e.target === hotkeysModal) {
+                    hotkeysModal.classList.remove('show');
+                }
+            });
+        }
+        
+        // Модальное окно о проекте
+        var aboutModal = document.getElementById('aboutModal');
+        if (aboutModal) {
+            var closeBtn = aboutModal.querySelector('.modal-close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', function() {
+                    aboutModal.classList.remove('show');
+                });
+            }
+            
+            aboutModal.addEventListener('click', function(e) {
+                if (e.target === aboutModal) {
+                    aboutModal.classList.remove('show');
+                }
+            });
+        }
+    },
 
     /**
      * Горячие клавиши
      */
-    _setupHotkeys() {
-        document.addEventListener('keydown', (e) => {
-            const handler = this.hotkeys[e.key];
+    _setupHotkeys: function() {
+        var self = this;
+        
+        document.addEventListener('keydown', function(e) {
+            var handler = self.hotkeys[e.key];
             if (handler) {
                 e.preventDefault();
-                handler();
+                handler.call(self);
             }
         });
-    }
+    },
 
     /**
      * Обработка Escape
      */
-    _handleEscape() {
+    _handleEscape: function() {
         // Закрываем меню
         UI.closeMenu();
         
         // Закрываем модальные окна
-        document.querySelectorAll('.modal.show').forEach(modal => {
-            modal.classList.remove('show');
-        });
+        var modals = document.querySelectorAll('.modal.show');
+        for (var i = 0; i < modals.length; i++) {
+            modals[i].classList.remove('show');
+        }
         
         // Выходим из полноэкранного режима
         if (document.fullscreenElement) {
             UI._exitFullscreen();
         }
-    }
+    },
 
     /**
      * Копирование ссылки
      */
-    async _copyLink() {
-        const success = await copyToClipboard(window.location.href);
+    _copyLink: function() {
+        var success = copyToClipboard(window.location.href);
         if (success) {
-            UI.showNotification('✅ Ссылка скопирована!', 'success');
+            showNotification('✅ Ссылка скопирована!', 'success');
         } else {
-            UI.showNotification('❌ Ошибка копирования', 'error');
+            showNotification('❌ Ошибка копирования', 'error');
         }
-    }
-
-    /**
-     * Показ правил
-     */
-    _showRules() {
-        const modal = document.getElementById('rulesModal');
-        if (modal) {
-            modal.classList.add('show');
-            UI.closeMenu();
-        }
-    }
-
-    /**
-     * Показ горячих клавиш
-     */
-    _showHotkeys() {
-        const modal = document.getElementById('hotkeysModal');
-        if (modal) {
-            modal.classList.add('show');
-            UI.closeMenu();
-        }
-    }
-
-    /**
-     * Показ информации о проекте
-     */
-    _showAbout() {
-        const modal = document.getElementById('aboutModal');
-        if (modal) {
-            modal.classList.add('show');
-            UI.closeMenu();
-        }
-    }
+    },
 
     /**
      * Переключение звука
      */
-    _toggleSound() {
-        const btn = document.getElementById('soundToggle');
-        const isEnabled = btn?.innerHTML.includes('Вкл');
+    _toggleSound: function() {
+        var btn = document.getElementById('soundToggle');
+        var isEnabled = btn && btn.innerHTML.indexOf('Вкл') !== -1;
         
         if (btn) {
             btn.innerHTML = isEnabled ? 
@@ -258,29 +284,29 @@ class EventManager {
                 '<i class="fas fa-volume-up"></i> Звуки: Вкл';
         }
         
-        UI.showNotification(isEnabled ? '🔇 Звуки выключены' : '🔊 Звуки включены', 'info');
-    }
+        showNotification(isEnabled ? '🔇 Звуки выключены' : '🔊 Звуки включены', 'info');
+    },
 
     /**
      * Обновление кнопки полноэкранного режима
      */
-    _updateFullscreenButton() {
-        const btn = document.getElementById('btnFullscreen');
+    _updateFullscreenButton: function() {
+        var btn = document.getElementById('btnFullscreen');
         if (!btn) return;
         
-        const isFullscreen = !!document.fullscreenElement;
+        var isFullscreen = !!(document.fullscreenElement || 
+                              document.webkitFullscreenElement || 
+                              document.mozFullScreenElement);
         
-        btn.classList.toggle('active', isFullscreen);
-        btn.innerHTML = isFullscreen ? 
-            '<i class="fas fa-compress"></i>' : 
-            '<i class="fas fa-expand"></i>';
+        if (isFullscreen) {
+            btn.classList.add('active');
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
+        } else {
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fas fa-expand"></i>';
+        }
     }
-}
+};
 
 // Глобальный экземпляр
-const eventManager = new EventManager();
-
-// ==================== ЭКСПОРТ ====================
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { EventManager, eventManager };
-}
+var eventManager = EventManager;

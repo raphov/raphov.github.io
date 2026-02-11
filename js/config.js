@@ -2,10 +2,10 @@
 const CONFIG = {
     RENDER_URL: 'codenames-u88n.onrender.com',
     HOLD_DURATION: 1500, // 1.5 секунды
-    VERSION: '3.0.0',
+    VERSION: '3.0.1',
     MAX_RECONNECT_ATTEMPTS: 5,
     PING_INTERVAL: 30000,
-    ROOM_LIFETIME: 24 * 60 * 60 * 1000, // 24 часа
+    ROOM_LIFETIME: 24 * 60 * 60 * 1000 // 24 часа
 };
 
 const TEAMS = {
@@ -32,8 +32,3 @@ const GAME_STATUS = {
     ACTIVE: 'active',
     FINISHED: 'finished'
 };
-
-// ==================== ЭКСПОРТ ====================
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { CONFIG, TEAMS, TEAM_NAMES, ROLES, GAME_STATUS };
-}
