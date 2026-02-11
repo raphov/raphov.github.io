@@ -1,20 +1,18 @@
 // ==================== МЕНЕДЖЕР СОБЫТИЙ ====================
 
 var EventManager = {
-    hotkeys: {
-        'f': function() { UI.toggleFullscreen(); },
-        'F': function() { UI.toggleFullscreen(); },
-        'Escape': function() { this._handleEscape(); },
-        '1': function() { mobileManager._setOrientation('portrait'); },
-        '2': function() { mobileManager._setOrientation('landscape'); },
-        '3': function() { mobileManager._setOrientation('auto'); },
-        'm': function() { UI.toggleMenu(); },
-        'M': function() { UI.toggleMenu(); },
-        'r': function() { UI.showRules(); },
-        'R': function() { UI.showRules(); },
-        'c': function() { this._copyLink(); },
-        'C': function() { this._copyLink(); }
-    },
+        hotkeys: {
+            'f': function() { UI.toggleFullscreen(); },
+            'F': function() { UI.toggleFullscreen(); },
+            'Escape': function() { this._handleEscape(); },
+            // '1', '2', '3' - УДАЛИТЬ
+            'm': function() { UI.toggleMenu(); },
+            'M': function() { UI.toggleMenu(); },
+            'r': function() { UI.showRules(); },
+            'R': function() { UI.showRules(); },
+            'c': function() { this._copyLink(); },
+            'C': function() { this._copyLink(); }
+        },
 
     /**
      * Инициализация всех обработчиков

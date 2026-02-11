@@ -111,11 +111,11 @@ var GameManager = {
                         action: 'click_card',
                         index: index
                     });
-                    
                     if (navigator.vibrate) {
                         navigator.vibrate(50);
                     }
                 }
+                isHolding = false; // ⬅️ ВАЖНО: сбрасываем флаг, чтобы не показывать уведомление
                 self._clearHoldTimer(index);
             }, CONFIG.HOLD_DURATION);
             
@@ -131,7 +131,7 @@ var GameManager = {
             progressBar.style.width = '0%';
             
             if (isHolding) {
-                showNotification('Удерживайте 1.5 секунды для выбора', 'info', 1000);
+                showNotification('Удерживайте 2 секунды для выбора', 'info', 1000);
             }
             
             isHolding = false;
@@ -166,32 +166,29 @@ var GameManager = {
      /**
      * Обновление карточки после открытия и счётчиков
      */
-    updateCard: function(index, color, redScore, blueScore) {
-        var cards = document.querySelectorAll('.card');
-        if (!cards[index]) return;
-        
-        var card = cards[index];
-        card.classList.add('opened', color);
-        card.style.opacity = '1';
-        
-        // Убираем прогресс-бар
-        var progressBar = card.querySelector('.hold-progress');
-        if (progressBar) progressBar.remove();
-        
-        // Убираем обработчики
-        var newCard = card.cloneNode(true);
-        card.parentNode.replaceChild(newCard, card);
-        
-        // Обновляем счётчики
-        var redCount = document.getElementById('redCount');
-        var blueCount = document.getElementById('blueCount');
-        if (redCount && redScore !== undefined) redCount.textContent = redScore;
-        if (blueCount && blueScore !== undefined) blueCount.textContent = blueScore;
-        
-        // Обновляем статистику
-        this.currentMove++;
-        this._updateStats();
-    },
+        updateCard: function(index, color, redScore, blueScore) {
+            var cards = document.querySelectorAll('.card');
+            if (!cards[index]) return;
+            
+            var card = cards[index];
+            card.classList.add('opened', color);
+            card.style.opacity = '1';
+            
+            var progressBar = card.querySelector('.hold-progress');
+            if (progressBar) progressBar.remove();
+            
+            var newCard = card.cloneNode(true);
+            card.parentNode.replaceChild(newCard, card);
+            
+            // ⬇️ ОБНОВЛЯЕМ СЧЁТЧИКИ
+            var redCount = document.getElementById('redCount');
+            var blueCount = document.getElementById('blueCount');
+            if (redCount && redScore !== undefined) redCount.textContent = redScore;
+            if (blueCount && blueScore !== undefined) blueCount.textContent = blueScore;
+            
+            this.currentMove++;
+            this._updateStats();
+        },
 
     /**
      * Обновление информации об игре

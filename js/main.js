@@ -89,7 +89,7 @@ function setupWebSocketHandlers() {
     
     // Открытие карточки
     wsManager.on('card_revealed', function(data) {
-        gameManager.updateCard(data.index, data.color);
+        gameManager.updateCard(data.index, data.color, data.red_score, data.blue_score);
     });
     
     // Смена хода

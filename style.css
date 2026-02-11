@@ -630,66 +630,6 @@ button:disabled {
     font-size: 1.2rem;
 }
 
-/* ===== УПРАВЛЕНИЕ ОРИЕНТАЦИЕЙ ===== */
-.orientation-controls {
-    position: fixed;
-    top: 25px;
-    left: 25px;
-    z-index: 950;
-    display: flex;
-    gap: 12px;
-    backdrop-filter: blur(10px);
-    background: rgba(16, 20, 48, 0.85);
-    padding: 10px;
-    border-radius: 16px;
-    border: 1px solid rgba(124, 58, 237, 0.3);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-}
-
-.orientation-btn {
-    width: 48px;
-    height: 48px;
-    background: rgba(30, 41, 59, 0.9);
-    border: 2px solid var(--border-light);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-secondary);
-    font-size: 20px;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    position: relative;
-    overflow: hidden;
-}
-
-.orientation-btn::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at center, rgba(124, 58, 237, 0.2), transparent 70%);
-    opacity: 0;
-    transition: opacity var(--transition-speed) ease;
-}
-
-.orientation-btn:hover {
-    background: rgba(51, 65, 85, 0.9);
-    border-color: #64748b;
-    transform: scale(1.15) rotate(15deg);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-}
-
-.orientation-btn:hover::before {
-    opacity: 1;
-}
-
-.orientation-btn.active {
-    background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(109, 40, 217, 0.9));
-    border-color: var(--purple-primary);
-    color: white;
-    box-shadow: 0 0 20px rgba(124, 58, 237, 0.5);
-    transform: scale(1.1);
-}
 
 /* ===== ПОЛНОЭКРАННЫЙ РЕЖИМ ===== */
 .fullscreen-btn {
@@ -1276,8 +1216,9 @@ body.landscape .game-header {
 /* ===== АДАПТИВНОСТЬ ===== */
 @media (max-width: 768px) {
     .container {
-        padding: 15px;
-        padding-bottom: 70px;
+        padding: 5px !important;
+        max-width: 100% !important;
+        width: 100% !important;
     }
     
     h1 {
@@ -1318,27 +1259,25 @@ body.landscape .game-header {
     }
     
     .board {
-        gap: 10px;
+        gap: 4px;
     }
     
     .card {
+        aspect-ratio: 1/1 !important; /* квадратные карточки */
         font-size: 14px;
-        padding: 10px;
-        aspect-ratio: 3/4;
+        padding: 6px;
     }
     
     .game-board-container {
-        padding: 20px;
+        padding: 10px !important;
+    }
+
+    .room-info, header, .game-header {
+        margin-left: -5px;
+        margin-right: -5px;
+        border-radius: 0;
     }
     
-    .orientation-controls {
-        top: 15px;
-        left: 15px;
-        padding: 8px;
-        gap: 10px;
-    }
-    
-    .orientation-btn,
     .fullscreen-btn {
         width: 42px;
         height: 42px;
@@ -1442,6 +1381,18 @@ body.landscape .game-header {
 }
 
 /* Адаптация для ландшафтного режима на телефонах */
+@media (orientation: landscape) and (max-width: 768px) {
+    .board {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 3px;
+    }
+    
+    .card {
+        aspect-ratio: 1/1;
+        font-size: 13px;
+        padding: 3px;
+    }
+}
 @media (orientation: landscape) and (max-height: 600px) {
     body.auto-rotate {
         padding: 10px;
